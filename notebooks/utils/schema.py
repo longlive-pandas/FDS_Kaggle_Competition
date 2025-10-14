@@ -9,52 +9,28 @@ from dataclasses import dataclass
 @dataclass
 class Boosts:
     atk: int
-    def_: int  # 'def' is a keyword in Python, so use 'def_' instead
+    def_: int  
     spa: int
     spd: int
     spe: int
 
 @dataclass
-class P1PokemonState:
+class PokemonState:
     name: str
-    hp_pct: int
+    hp_pct: float
     status: str
     effects: List[str]
     boosts: Boosts
 
 @dataclass
-class P1MoveDetails:
+class MoveDetails:
     name: str
     type: str
     category: str
     base_power: int
-    accuracy: int
+    accuracy: float
     priority: int
 
-@dataclass
-class Boosts2:
-    atk: int
-    def_: int
-    spa: int
-    spd: int
-    spe: int
-
-@dataclass
-class P2PokemonState:
-    name: str
-    hp_pct: int
-    status: str
-    effects: List[str]
-    boosts: Boosts2
-
-@dataclass
-class P2MoveDetails:
-    name: str
-    type: str
-    category: str
-    base_power: int
-    accuracy: int
-    priority: int
 
 @dataclass
 class P1TeamDetail:
@@ -83,10 +59,10 @@ class P2LeadDetails:
 @dataclass
 class BattleTimeline:
     turn: int
-    p1_pokemon_state: P1PokemonState
-    p1_move_details: Optional[P1MoveDetails] = None
-    p2_pokemon_state: P2PokemonState
-    p2_move_details: Optional[P2MoveDetails] = None
+    p1_pokemon_state: PokemonState
+    p1_move_details: Optional[MoveDetails] = None
+    p2_pokemon_state: PokemonState
+    p2_move_details: Optional[MoveDetails] = None
 
 @dataclass
 class Root:
