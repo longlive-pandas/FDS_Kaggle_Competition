@@ -12,10 +12,10 @@ git clone https://github.com/longlive-pandas/FDS_Kaggle_Competition.git
 
 ### La lista delle dipendenze è nel file pyproject.toml
 
-<pre>
+
 ```toml 
 dependencies = [ "ipykernel>=7.0.0", "ipywidgets>=8.1.7", "pandas>=2.3.3", "scikit-learn>=1.7.2", "tqdm>=4.67.1", ] 
 ``` 
-</pre>
+
 
 ### Uno schema dei dati di addestramento è mostrato nel file utils/schema.py
