@@ -33,7 +33,7 @@ class MoveDetails:
 
 
 @dataclass
-class P1TeamDetail:
+class PokemonDetail:
     name: str
     level: int
     types: List[str]
@@ -44,17 +44,7 @@ class P1TeamDetail:
     base_spd: int
     base_spe: int
 
-@dataclass
-class P2LeadDetails:
-    name: str
-    level: int
-    types: List[str]
-    base_hp: int
-    base_atk: int
-    base_def: int
-    base_spa: int
-    base_spd: int
-    base_spe: int
+
 
 @dataclass
 class BattleTimeline:
@@ -67,7 +57,7 @@ class BattleTimeline:
 @dataclass
 class Root:
     player_won: bool
-    p1_team_details: List[P1TeamDetail]
-    p2_lead_details: P2LeadDetails
+    p1_team_details: List[PokemonDetail]
+    p2_lead_details: PokemonDetail
     battle_timeline: List[BattleTimeline]
     battle_id: int
