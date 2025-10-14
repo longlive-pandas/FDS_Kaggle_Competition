@@ -19,3 +19,59 @@ dependencies = [ "ipykernel>=7.0.0", "ipywidgets>=8.1.7", "pandas>=2.3.3", "scik
 
 
 ### Uno schema dei dati di addestramento è mostrato nel file utils/schema.py
+
+```mermaid
+erDiagram
+    ROOT {
+        bool player_won
+        int battle_id
+    }
+    ROOT ||--o{ POKEMONDETAIL : "p1_team_details"
+    ROOT ||--|| POKEMONDETAIL : "p2_lead_details"
+    ROOT ||--o{ BATTLETIMELINE : "battle_timeline"
+
+    BATTLETIMELINE {
+        int turn
+    }
+    BATTLETIMELINE ||--|| POKEMONSTATE : "p1_pokemon_state"
+    BATTLETIMELINE ||--o| MOVEDETAILS : "p1_move_details"
+    BATTLETIMELINE ||--|| POKEMONSTATE : "p2_pokemon_state"
+    BATTLETIMELINE ||--o| MOVEDETAILS : "p2_move_details"
+
+    POKEMONSTATE {
+        string name
+        float hp_pct
+        string status
+        string[] effects
+    }
+    POKEMONSTATE ||--|| BOOSTS : "boosts"
+
+    BOOSTS {
+        int atk
+        int def_
+        int spa
+        int spd
+        int spe
+    }
+
+    MOVEDETAILS {
+        string name
+        string type
+        string category
+        int base_power
+        float accuracy
+        int priority
+    }
+
+    POKEMONDETAIL {
+        string name
+        int level
+        string[] types
+        int base_hp
+        int base_atk
+        int base_def
+        int base_spa
+        int base_spd
+        int base_spe
+    }
+```
