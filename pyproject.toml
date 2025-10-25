@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "ipykernel>=7.0.0",
     "ipywidgets>=8.1.7",
+    "nbdime>=4.0.2",
     "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
