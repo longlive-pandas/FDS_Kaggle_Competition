@@ -30,6 +30,67 @@ type_chart = {
     "Steel":      {"Fire":0.5, "Water":0.5, "Electric":0.5, "Ice":2.0, "Rock":2.0, "Fairy":2.0, "Steel":0.5},
     "Fairy":      {"Fire":0.5, "Fighting":2.0, "Poison":0.5, "Dragon":2.0, "Dark":2.0, "Steel":0.5}
 }
+from collections import defaultdict
+import copy
+
+from collections import defaultdict
+import copy
+
+def moves_by_pokemon_list(timeline, unique=True):
+    """
+    Return per-player dict of {pokemon_name: [move_details, ...]}.
+    
+    Args:
+        battle (dict): single battle record with 'battle_timeline'.
+        unique (bool): if True, include each distinct move once per Pokémon (order of first use).
+                       if False, include a move entry every time it was used.
+    """
+    result = {"p1": defaultdict(list), "p2": defaultdict(list)}
+    seen_keys = {"p1": defaultdict(set), "p2": defaultdict(set)} if unique else None
+
+    for turn in timeline or []:
+        # P1
+        p1_name = (turn.get("p1_pokemon_state") or {}).get("name")
+        p1_move = turn.get("p1_move_details")
+        if p1_name and p1_move:
+            if unique:
+                key = (
+                    p1_move.get("name"),
+                    p1_move.get("type"),
+                    p1_move.get("category"),
+                    p1_move.get("base_power"),
+                    p1_move.get("accuracy"),
+                    p1_move.get("priority"),
+                )
+                if key not in seen_keys["p1"][p1_name]:
+                    seen_keys["p1"][p1_name].add(key)
+                    result["p1"][p1_name].append(copy.deepcopy(p1_move))
+            else:
+                result["p1"][p1_name].append(copy.deepcopy(p1_move))
+
+        # P2
+        p2_name = (turn.get("p2_pokemon_state") or {}).get("name")
+        p2_move = turn.get("p2_move_details")
+        if p2_name and p2_move:
+            if unique:
+                key = (
+                    p2_move.get("name"),
+                    p2_move.get("type"),
+                    p2_move.get("category"),
+                    p2_move.get("base_power"),
+                    p2_move.get("accuracy"),
+                    p2_move.get("priority"),
+                )
+                if key not in seen_keys["p2"][p2_name]:
+                    seen_keys["p2"][p2_name].add(key)
+                    result["p2"][p2_name].append(copy.deepcopy(p2_move))
+            else:
+                result["p2"][p2_name].append(copy.deepcopy(p2_move))
+
+    # cast defaultdicts to dicts
+    result["p1"] = dict(result["p1"])
+    result["p2"] = dict(result["p2"])
+    return result
 
 #0 Mean CV accuracy: 83.59% (+/- 0.64%)
 #1 Mean CV accuracy: 83.62% (+/- 0.67%)
@@ -218,7 +279,175 @@ print(f"Loading data from '{train_file_path}'...")
 ######analisi varie dati
 import json
 import pandas as pd
+import json
 
+prova_data = []
+with open(train_file_path, "r") as f:
+    prova_data = [json.loads(line) for line in f]
+def extract_pokemon_types(data):
+    """
+    Extract a dictionary of all unique Pokémon names and their associated types
+    from the dataset (p1_team_details and p2_lead_details across all battles).
+    """
+    pokemon_types = {}
+
+    for battle in data:
+        # --- Player 1 team ---
+        p1_team = battle.get("p1_team_details", [])
+        for p in p1_team:
+            name = p.get("name")
+            types = p.get("types", [])
+            if name:
+                if name not in pokemon_types:
+                    pokemon_types[name] = set()
+                pokemon_types[name].update(t for t in types if t != "notype")
+
+        # --- Player 2 lead ---
+        p2_lead = battle.get("p2_lead_details", {})
+        if p2_lead:
+            name = p2_lead.get("name")
+            types = p2_lead.get("types", [])
+            if name:
+                if name not in pokemon_types:
+                    pokemon_types[name] = set()
+                pokemon_types[name].update(t for t in types if t != "notype")
+
+    # Convert type sets to sorted lists for readability
+    return {name: sorted(list(types)) for name, types in pokemon_types.items()}
+# Assuming you loaded the data as before
+# train_data = [json.loads(line) for line in open(train_file_path)]
+
+
+
+from collections import defaultdict
+import copy
+
+from collections import OrderedDict
+
+def _normalize_move(m):
+    """Return a compact, hashable signature + a cleaned dict for a move."""
+    if not m or not isinstance(m, dict):
+        return None, None
+    name = m.get("name")
+    if not name:
+        return None, None
+    sig = (
+        name,
+        m.get("type"),
+        m.get("category"),
+        m.get("base_power"),
+        m.get("accuracy"),
+        m.get("priority"),
+    )
+    cleaned = {
+        "name": name,
+        "type": m.get("type"),
+        "category": m.get("category"),
+        "base_power": m.get("base_power"),
+        "accuracy": m.get("accuracy"),
+        "priority": m.get("priority"),
+    }
+    return sig, cleaned
+
+def extract_moves_per_battle(battle):
+    """
+    Returns:
+      {
+        "p1": { pokemon_name: [ {move dict}, ... ], ... },
+        "p2": { pokemon_name: [ {move dict}, ... ], ... },
+      }
+    Lists contain unique moves (by full signature), preserving first-seen order.
+    """
+    result = {"p1": {}, "p2": {}}
+
+    # Ordered sets per (player,pokemon) to preserve order and deduplicate
+    seen = {"p1": {}, "p2": {}}
+
+    for turn in battle.get("battle_timeline", []) or []:
+        # P1
+        p1_state = turn.get("p1_pokemon_state") or {}
+        p1_name  = p1_state.get("name")
+        p1_move  = turn.get("p1_move_details")
+        sig, move = _normalize_move(p1_move)
+        if p1_name and sig:
+            if p1_name not in seen["p1"]:
+                seen["p1"][p1_name] = OrderedDict()
+                result["p1"][p1_name] = []
+            if sig not in seen["p1"][p1_name]:
+                seen["p1"][p1_name][sig] = True
+                result["p1"][p1_name].append(move)
+
+        # P2
+        p2_state = turn.get("p2_pokemon_state") or {}
+        p2_name  = p2_state.get("name")
+        p2_move  = turn.get("p2_move_details")
+        sig, move = _normalize_move(p2_move)
+        if p2_name and sig:
+            if p2_name not in seen["p2"]:
+                seen["p2"][p2_name] = OrderedDict()
+                result["p2"][p2_name] = []
+            if sig not in seen["p2"][p2_name]:
+                seen["p2"][p2_name][sig] = True
+                result["p2"][p2_name].append(move)
+
+    return result
+from collections import defaultdict
+
+def extract_all_moves(data):
+    """
+    Scan all battles/timelines and collect unique moves with metadata + usage counts.
+
+    Returns:
+      {
+        move_name: {
+          "type": str|None,
+          "category": str|None,
+          "base_power": int|float|None,
+          "accuracy": float|None,
+          "priority": int|None,
+          "usage_count": int
+        }, ...
+      }
+    """
+    moves = defaultdict(lambda: {
+        "type": None, "category": None, "base_power": None,
+        "accuracy": None, "priority": None, "usage_count": 0
+    })
+
+    for battle in data:
+        for turn in battle.get("battle_timeline", []) or []:
+            for key in ("p1_move_details", "p2_move_details"):
+                mv = turn.get(key)
+                sig, m = _normalize_move(mv)
+                if not m:
+                    continue
+                name = m["name"]
+                entry = moves[name]
+                # keep first non-None metadata we see
+                entry["type"]       = entry["type"]       if entry["type"] is not None       else m["type"]
+                entry["category"]   = entry["category"]   if entry["category"] is not None   else m["category"]
+                entry["base_power"] = entry["base_power"] if entry["base_power"] is not None else m["base_power"]
+                entry["accuracy"]   = entry["accuracy"]   if entry["accuracy"] is not None   else m["accuracy"]
+                entry["priority"]   = entry["priority"]   if entry["priority"] is not None   else m["priority"]
+                entry["usage_count"] += 1
+
+    return dict(moves)
+
+
+# Single battle
+#per_battle = extract_moves_per_battle(one_battle)
+# per_battle["p1"]["starmie"] -> list of starmie’s unique moves (dicts)
+
+# Whole dataset
+all_moves = extract_all_moves(prova_data)
+print(len(all_moves))
+# sort by usage
+top = sorted(all_moves.items(), key=lambda x: x[1]["usage_count"], reverse=True)[:10]
+for name, info in top:
+    print(name, info)
+
+
+#exit(1)
 # Supponiamo che tu abbia già caricato il file JSONL in train_data
 # come lista di dict (uno per battle)
 """
@@ -471,6 +700,67 @@ TYPE_EFFECTIVENESS = {
     # neutral = 1.0 if not found
 }
 
+import numpy as np
+
+def type_advantage_dynamic(battle, pokemon_type_dict, type_chart):
+    """
+    Compute average type advantage over all turns for both players.
+
+    Args:
+        battle (dict): a single battle record with 'battle_timeline'.
+        pokemon_type_dict (dict): {pokemon_name: [type1, type2, ...]}
+        type_chart (dict): type effectiveness chart.
+
+    Returns:
+        dict: {
+            "p1_avg_type_adv": float,
+            "p2_avg_type_adv": float
+        }
+    """
+
+    timeline = battle.get("battle_timeline", []) or []
+
+    def compute_effectiveness(move_type, defender_types):
+        """Compute summed type effectiveness of a move on a defending Pokémon."""
+        if not move_type or not defender_types:
+            return 1.0
+        eff = 0.0
+        for dtype in defender_types:
+            eff += type_chart.get(move_type.capitalize(), {}).get(dtype.capitalize(), 1.0)
+        return eff
+
+    p1_scores, p2_scores = [], []
+
+    for turn in timeline:
+        # --- Player 1 move advantage ---
+        p1_move = turn.get("p1_move_details")
+        p2_state = turn.get("p2_pokemon_state") or {}
+        if p1_move and p2_state:
+            move_type = p1_move.get("type")
+            defender = p2_state.get("name")
+            defender_types = pokemon_type_dict.get(defender, [])
+            p1_scores.append(compute_effectiveness(move_type, defender_types))
+
+        # --- Player 2 move advantage ---
+        p2_move = turn.get("p2_move_details")
+        p1_state = turn.get("p1_pokemon_state") or {}
+        if p2_move and p1_state:
+            move_type = p2_move.get("type")
+            defender = p1_state.get("name")
+            defender_types = pokemon_type_dict.get(defender, [])
+            p2_scores.append(compute_effectiveness(move_type, defender_types))
+
+    # Compute averages (default to 1.0 if no moves)
+    p1_avg = float(np.mean(p1_scores)) if p1_scores else 1.0
+    p2_avg = float(np.mean(p2_scores)) if p2_scores else 1.0
+
+    return {
+        "p1_avg_type_adv": p1_avg,
+        "p2_avg_type_adv": p2_avg,
+        "diff_type_adv": p1_avg - p2_avg
+    }
+
+
 def type_advantage(team_types: list[str], opp_types: list[str]) -> float:
     """
     Compute the average type advantage multiplier for player1's team
@@ -500,10 +790,21 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
     status_change_diff = []
+    pokemon_type_dict = extract_pokemon_types(data)
     for battle in tqdm(data, desc="Extracting features"):
 
         features = {}
 
+        
+        #print(f"Found {len(pokemon_type_dict)} Pokémon with type information.\n")
+        # Print a sample
+        for name, types in list(pokemon_type_dict.items())[:10]:
+            print(f"{name}: {types}")
+        res = type_advantage_dynamic(battle, pokemon_type_dict, type_chart)
+        #features['p1_avg_type_adv'] = res['p1_avg_type_adv']
+        features['p2_avg_type_adv'] = res['p2_avg_type_adv']
+        #features['diff_type_adv'] = res['diff_type_adv']
+        
         # --- Player 1 Team Features ---
         p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
         p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_spd = p1_lead_spa = 0.0
@@ -519,7 +820,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             p1_mean_spa = np.mean([p.get('base_spa', 0) for p in p1_team])
 
             features['p1_mean_hp'] = p1_mean_hp
-            features['p1_mean_spe'] = p1_mean_spe
+            #features['p1_mean_spe'] = p1_mean_spe#reverse greedy 83.89->83.94
             features['p1_mean_atk'] = p1_mean_atk
             features['p1_mean_def'] = p1_mean_def
             features['p1_mean_sp'] = p1_mean_spd
@@ -550,7 +851,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
         # I ADD THE DIFFS/DELTAS
         features['diff_hp']  = p1_lead_hp  - p2_hp#68->87
         features['diff_spe'] = p1_lead_spe - p2_spe
-        features['diff_atk'] = p1_lead_atk - p2_atk
+        #features['diff_atk'] = p1_lead_atk - p2_atk#reverse greedy
         features['diff_def'] = p1_lead_def - p2_def
         features['diff_spd'] =  p1_lead_spd - p2_spd#83->87
         #features['diff_spa'] =  p1_lead_spa - p2_spa#83->87
@@ -715,21 +1016,88 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             if p1_priorities and p2_priorities:
                 min_len = min(len(p1_priorities), len(p2_priorities))
                 higher_priority_turns = sum(p1_priorities[i] > p2_priorities[i] for i in range(min_len))
-                features["priority_rate_advantage"] = higher_priority_turns / max(1, min_len)
+                priority_rate_advantage = higher_priority_turns / max(1, min_len)
+                #features["priority_rate_advantage"] = priority_rate_advantage#reverse greedy
             else:
-                features["priority_rate_advantage"] = 0.0
+                #features["priority_rate_advantage"] = 0.0#reverse greedy
+                pass
 
             #new feature: confronta stat se disponibili
             # --- Stat difference across turns ---
             #
+            # mean_stat_diffs = {
+            #     # "base_hp": [], 
+            #     "base_atk": [],#83.77=>83.86% (+/- 0.50%) +0.09
+            #     #  "base_def": [], #83.77=>83.72 -0.05
+            #     "base_spa": [], #83.77=>83.73 -0.04; base_atk + base_spa + base_spe => 83.87% (+/- 0.54%) +0.10
+            #     # "base_spd": [],#83.77=>83.73 -0.04
+            #     "base_spe": []#83.77=>83.71 -0.06
+            # }
+
+            # std_stat_diffs = {
+            #     # "base_hp": [], 
+            #     #"base_atk": [],#83.77=>83.86% (+/- 0.50%) +0.09#reverse greedy
+            #     #  "base_def": [], #83.77=>83.72 -0.05
+            #     "base_spa": [], #83.77=>83.73 -0.04; base_atk + base_spa + base_spe => 83.87% (+/- 0.54%) +0.10
+            #     # "base_spd": [],#83.77=>83.73 -0.04
+            #     #"base_spe": []#83.77=>83.71 -0.06#reverse greedy
+            # }
+            # for t in timeline:
+            #     p1_state = t.get("p1_pokemon_state", {})
+            #     p2_state = t.get("p2_pokemon_state", {})
+
+            #     # Retrieve names
+            #     p1_name = p1_state.get("name")
+            #     p2_name = p2_state.get("name")
+
+            #     # Retrieve their base stats (if available)
+            #     p1_stats = get_pokemon_stats(p1_team, p1_name) if p1_name else None
+            #     p2_stats = None
+
+            #     # p2: if same as lead, use lead; otherwise, None
+            #     p2_lead = battle.get("p2_lead_details", {})
+            #     if p2_name and p2_lead and p2_lead.get("name") == p2_name:
+            #         p2_stats = {
+            #              "base_hp": p2_lead.get("base_hp", 0),
+            #             "base_atk": p2_lead.get("base_atk", 0),
+            #              "base_def": p2_lead.get("base_def", 0),
+            #             "base_spa": p2_lead.get("base_spa", 0),
+            #              "base_spd": p2_lead.get("base_spd", 0),
+            #             "base_spe": p2_lead.get("base_spe", 0)
+            #         }
+
+            #     # Skip turns where one Pokémon’s stats are unknown
+            #     if not p1_stats or not p2_stats:
+            #         continue
+
+            #     # Compute differences
+            #     for stat in mean_stat_diffs.keys():
+            #         diff = p1_stats[stat] - p2_stats[stat]
+            #         mean_stat_diffs[stat].append(diff)
+            #     for stat in std_stat_diffs.keys():
+            #         diff = p1_stats[stat] - p2_stats[stat]
+            #         std_stat_diffs[stat].append(diff)
+
+            # # --- Aggregate stat differences over the timeline ---
+            # for stat, diffs in mean_stat_diffs.items():
+            #     if diffs:
+            #         features[f"mean_{stat}_diff_timeline"] = np.mean(diffs)#83.74=>83.87
+            #     else:
+            #         features[f"mean_{stat}_diff_timeline"] = 0.0
+            # for stat, diffs in std_stat_diffs.items():
+            #     if diffs:
+            #         features[f"std_{stat}_diff_timeline"] = np.std(diffs)#83.78=>83.87
+            #     else:
+            #         features[f"std_{stat}_diff_timeline"] = 0.0
+
             stat_diffs = {
                 # "base_hp": [], 
-                          "base_atk": [],#83.77=>83.86% (+/- 0.50%) +0.09
-                           #  "base_def": [], #83.77=>83.72 -0.05
-                        "base_spa": [], #83.77=>83.73 -0.04; base_atk + base_spa + base_spe => 83.87% (+/- 0.54%) +0.10
-                        # "base_spd": [],#83.77=>83.73 -0.04
-                        "base_spe": []#83.77=>83.71 -0.06
-                        }
+                "base_atk": [],#83.77=>83.86% (+/- 0.50%) +0.09
+                #  "base_def": [], #83.77=>83.72 -0.05
+                "base_spa": [], #83.77=>83.73 -0.04; base_atk + base_spa + base_spe => 83.87% (+/- 0.54%) +0.10
+                # "base_spd": [],#83.77=>83.73 -0.04
+                "base_spe": []#83.77=>83.71 -0.06
+            }
 
             for t in timeline:
                 p1_state = t.get("p1_pokemon_state", {})
@@ -765,13 +1133,22 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
                     stat_diffs[stat].append(diff)
 
             # --- Aggregate stat differences over the timeline ---
+            stat_diff_excluded_reverse_greedy = [
+                "std_base_atk_diff_timeline", "std_base_spa_diff_timeline"
+            ]
             for stat, diffs in stat_diffs.items():
+                std_stat_diff_name = f"std_{stat}_diff_timeline"
+                if std_stat_diff_name not in stat_diff_excluded_reverse_greedy:
+                    if diffs:
+                        features[std_stat_diff_name] = np.std(diffs)#83.78=>83.87
+                    else:
+                        features[f"std_{stat}_diff_timeline"] = 0.0
                 if diffs:
                     features[f"mean_{stat}_diff_timeline"] = np.mean(diffs)#83.74=>83.87
-                    features[f"std_{stat}_diff_timeline"] = np.std(diffs)#83.78=>83.87
+                    
                 else:
                     features[f"mean_{stat}_diff_timeline"] = 0.0
-                    features[f"std_{stat}_diff_timeline"] = 0.0
+                    
             #"""
             #SALUTE
             p1_hp = [t['p1_pokemon_state']['hp_pct'] for t in timeline if t.get('p1_pokemon_state')]
@@ -781,7 +1158,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             #salute media dei pokemon del secondo giocatore ATTENZIONE FEATURE BUONE CORRELATE CON hp_diff_mean 75%,VALUTAZIONE DELL'EEFFETTO SU BASE SINGOLA (CON HP DIFF)
             #features['p2_mean_hp_pct'] = np.mean(p2_hp)
             #vantaggio medio in salute (media della differenza tra la salute dei pokemon del primo giocatore e quella dei pokemon del secondo giocatore)
-            features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))
+            #features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))#reverse greedy
             
             
             """6 (performance drop)
@@ -831,9 +1208,10 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             #print(p1_hp_final)
             #numero di pockemon usati dal giocatore nei primi 30 turni
             features['p1_n_pokemon_use'] =len(p1_hp_final.keys())
-            features['p2_n_pokemon_use'] =len(p2_hp_final.keys())
+            p2_n_pokemon_use = len(p2_hp_final.keys())
+            #features['p2_n_pokemon_use'] = p2_n_pokemon_use#reverse greedy
             #differenza nello schieramento pockemon dopo 30 turni
-            features['diff_final_schieramento']=features['p1_n_pokemon_use']-features['p2_n_pokemon_use']
+            features['diff_final_schieramento']=features['p1_n_pokemon_use']-p2_n_pokemon_use
             nr_pokemon_sconfitti_p1 = np.sum([1 for e in list(p1_hp_final.values()) if e==0])
             nr_pokemon_sconfitti_p2 = np.sum([1 for e in list(p2_hp_final.values()) if e==0])
             features['nr_pokemon_sconfitti_p1'] = nr_pokemon_sconfitti_p1
@@ -843,7 +1221,8 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             features['p1_pct_final_hp'] =np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
             features['p2_pct_final_hp'] =np.sum(list(p2_hp_final.values()))+(6-len(p1_hp_final.keys()))
             #SAREBBE CLAMOROSO NORMALIZZARLA ANCHE IN BASE ALLA DIFFERENZA DI VITA ASSOLUTA DEI POCKEMON LEADER DEI 2 PLAYER
-            features['diff_final_hp']=features['p1_pct_final_hp']-features['p2_pct_final_hp']
+            diff_final_hp = features['p1_pct_final_hp']-features['p2_pct_final_hp']
+            #features['diff_final_hp']=diff_final_hp#reverse greedy 83.94->84.02
 
             #9 new
             # --- Battle duration and HP loss rate ---
@@ -853,7 +1232,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
                 dur = 0
             features["battle_duration"] = dur
             features["hp_loss_rate"] = (
-                features["diff_final_hp"] / dur if dur > 0 else 0.0
+                diff_final_hp / dur if dur > 0 else 0.0
             )
 
             
@@ -869,7 +1248,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             nr_turns = 30 #numero turni
             slice_idx = nr_turns // phases #slice index must be integer
             #print("slice_idx: ",slice_idx, "len p1_hp: ",len(p1_hp))
-            features['early_hp_mean_diff'] = np.mean(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
+            #features['early_hp_mean_diff'] = np.mean(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))#reverse greedy
             features['late_hp_mean_diff'] = np.mean(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
             
             
@@ -878,7 +1257,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             #features['phases_hp_mean_diff'] = features['late_hp_mean_diff'] - features['early_hp_mean_diff']
             #77.94% (+/- 0.35%) => 77.94% (+/- 0.41%)
             hp_delta = np.array(p1_hp) - np.array(p2_hp)
-            features['hp_delta_trend'] = np.polyfit(range(len(hp_delta)), hp_delta, 1)[0]
+            #features['hp_delta_trend'] = np.polyfit(range(len(hp_delta)), hp_delta, 1)[0]#reverse greedy
             #new
             features['hp_advantage_trend'] = hp_advantage_trend(battle)
             #6 new --- HP momentum (number of times advantage flips) ---
@@ -888,7 +1267,7 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             """
             #fluttuazioni negli hp (andamento della partita: stabile o molto caotica)
             #77.94% (+/- 0.41%) => 79.09% (+/- 1.02%)
-            features['p1_hp_std'] = np.std(p1_hp)
+            #features['p1_hp_std'] = np.std(p1_hp)#reverse greedy
             features['p2_hp_std'] = np.std(p2_hp)
             features['hp_delta_std'] = np.std(hp_delta)
 
@@ -938,12 +1317,12 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             #QUANTO IL TEAM è BILANCIATO (TIPI E VELOCITA)
             #79.09% (+/- 1.02%) => 79.29% (+/- 0.92%)
             p1_types = [t for p in p1_team for t in p.get('types', []) if t != 'notype']
-            features['p1_type_diversity'] = len(set(p1_types))
+            #features['p1_type_diversity'] = len(set(p1_types))#reverse greedy
 
             MEDIUM_SPEED_THRESHOLD = 90 #medium-speed pokemon
             HIGH_SPEED_THRESHOLD = 100 #fast pokemon
             speeds = np.array([p.get('base_spe', 0) for p in p1_team])
-            features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
+            #features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)#reverse greedy
             features['p1_avg_high_speed_stat_battaglia'] = np.mean(np.array(speeds) > HIGH_SPEED_THRESHOLD)
 
 
@@ -1112,8 +1491,8 @@ steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=42)))
 pipe = Pipeline(steps)
 
 #kfold cross-validation
-kfold = KFold(n_splits=5, shuffle=True, random_state=42)  # 5-fold CV
-print("Training Logistic Regression con 5-Fold Cross-Validation...\n")
+kfold = KFold(n_splits=7, shuffle=True, random_state=42)  # 7-fold CV
+print("Training Logistic Regression con 7-Fold Cross-Validation...\n")
 scores = cross_val_score(pipe, X, y, cv=kfold, scoring='accuracy', n_jobs=-1)
 print(f"Cross-validation accuracies: {np.round(scores, 4)}")
 print(f"Mean CV accuracy: {np.mean(scores)*100:.2f}% (+/- {np.std(scores)*100:.2f}%)")
