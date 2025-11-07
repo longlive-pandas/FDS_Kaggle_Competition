@@ -216,6 +216,48 @@ print(f"Loading data from '{train_file_path}'...")
 
 
 ######analisi varie dati
+import json
+import pandas as pd
+
+# Supponiamo che tu abbia già caricato il file JSONL in train_data
+# come lista di dict (uno per battle)
+"""
+Totale mosse con priorità diversa da 0: 1
+  move_name  priority      type  category  count
+0   counter        -1  FIGHTING  PHYSICAL   3454
+
+moves_with_priority = []
+with open(train_file_path, "r") as f:
+    records = [json.loads(line) for line in f]
+for battle in records:
+    for turn in battle.get("battle_timeline", []):
+        for key in ["p1_move_details", "p2_move_details"]:
+            move = turn.get(key)
+            if move and move.get("priority", 0) != 0:
+                moves_with_priority.append({
+                    "battle_id": battle["battle_id"],
+                    "player": key.split("_")[0],  # p1 o p2
+                    "move_name": move.get("name", None),
+                    "priority": move.get("priority", 0),
+                    "type": move.get("type", None),
+                    "category": move.get("category", None),
+                })
+
+# Convertiamo in DataFrame
+df_moves = pd.DataFrame(moves_with_priority)
+print("df moves: ",df_moves)
+# Mostriamo le mosse distinte con priorità ≠ 0 e il loro conteggio
+distinct_moves = (
+    df_moves.groupby(["move_name", "priority", "type", "category"])
+    .size()
+    .reset_index(name="count")
+    .sort_values(by="count", ascending=False)
+)
+
+print(f"Totale mosse con priorità diversa da 0: {len(distinct_moves)}")
+print(distinct_moves)
+exit(1)
+"""
 """
 priority
      count
@@ -463,8 +505,8 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
         features = {}
 
         # --- Player 1 Team Features ---
-        p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_sp = 0.0
-        p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_sp = 0.0
+        p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
+        p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_spd = p1_lead_spa = 0.0
 
         p1_team = battle.get('p1_team_details', [])
         if p1_team:
@@ -473,25 +515,27 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             p1_mean_spe = np.mean([p.get('base_spe', 0) for p in p1_team])
             p1_mean_atk = np.mean([p.get('base_atk', 0) for p in p1_team])
             p1_mean_def = np.mean([p.get('base_def', 0) for p in p1_team])
-            p1_mean_sp = np.mean([p.get('base_spd', 0) for p in p1_team])
+            p1_mean_spd = np.mean([p.get('base_spd', 0) for p in p1_team])
+            p1_mean_spa = np.mean([p.get('base_spa', 0) for p in p1_team])
 
             features['p1_mean_hp'] = p1_mean_hp
             features['p1_mean_spe'] = p1_mean_spe
             features['p1_mean_atk'] = p1_mean_atk
             features['p1_mean_def'] = p1_mean_def
-            features['p1_mean_sp'] = p1_mean_sp
+            features['p1_mean_sp'] = p1_mean_spd
+            #features['p1_mean_spa'] = p1_mean_spa#decrease score, increase std
 
             #PER UN CONFRONTO EQUO UTILIZZIAMO SOLO DATI DEL LEADER ANCHE NELLA SQUADRA 1 PER LE DIFFERENZE
             p1_lead_hp =  p1_team[0].get('base_hp', 0)
             p1_lead_spe = p1_team[0].get('base_spe', 0)
             p1_lead_atk = p1_team[0].get('base_atk', 0)
             p1_lead_def = p1_team[0].get('base_def', 0)
-            p1_lead_sp =  p1_team[0].get('base_spd', 0)
-
+            p1_lead_spd =  p1_team[0].get('base_spd', 0)
+            p1_lead_spa =  p1_team[0].get('base_spa', 0)
 
 
         # --- Player 2 Lead Features ---
-        p2_hp = p2_spe = p2_atk = p2_def = p2_sp= 0.0
+        p2_hp = p2_spe = p2_atk = p2_def = p2_spd = p2_spa= 0.0
         p2_lead = battle.get('p2_lead_details')
         if p2_lead:
             # Player 2's lead Pokémon's stats
@@ -499,29 +543,28 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             p2_spe = p2_lead.get('base_spe', 0)
             p2_atk = p2_lead.get('base_atk', 0)
             p2_def = p2_lead.get('base_def', 0)
-            p2_sp = p2_lead.get('base_spd', 0)
-
+            p2_spd = p2_lead.get('base_spd', 0)
+            p2_spa = p2_lead.get('base_spa', 0)
 
 
         # I ADD THE DIFFS/DELTAS
-        features['diff_hp']  = p1_lead_hp  - p2_hp
+        features['diff_hp']  = p1_lead_hp  - p2_hp#68->87
         features['diff_spe'] = p1_lead_spe - p2_spe
         features['diff_atk'] = p1_lead_atk - p2_atk
         features['diff_def'] = p1_lead_def - p2_def
-        features['diff_sp'] =  p1_lead_sp - p2_sp
+        features['diff_spd'] =  p1_lead_spd - p2_spd#83->87
+        #features['diff_spa'] =  p1_lead_spa - p2_spa#83->87
 
         #8 new
-        """
         # --- Type advantage (lead vs. lead) ---
         p1_lead_types = [t for t in p1_team[0].get("types", []) if t != "notype"] if p1_team else []
         p2_lead_types = [t for t in p2_lead.get("types", []) if t != "notype"] if p2_lead else []
-
-        features["p1_lead_type_advantage"] = type_effectiveness(p1_lead_types, p2_lead_types)
-        features["p2_lead_type_advantage"] = type_effectiveness(p2_lead_types, p1_lead_types)
-        features["diff_type_advantage"] = (
-            features["p1_lead_type_advantage"] - features["p2_lead_type_advantage"]
-        )
-        """
+        p1_lead_type_advantage = type_effectiveness(p1_lead_types, p2_lead_types)
+        p2_lead_type_advantage = type_effectiveness(p2_lead_types, p1_lead_types)
+        #features["p1_lead_type_advantage"] = p1_lead_type_advantage
+        #features["p2_lead_type_advantage"] = p2_lead_type_advantage
+        #no increase no decrease
+        #features["diff_type_advantage"] = p1_lead_type_advantage - p2_lead_type_advantage
         #new2
         #features['status_duration_ratio'] = status_duration_ratio(battle)
 
@@ -535,6 +578,83 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
         #Chi mantiene più HP medi e conduce più turni,  nella maggior parte dei casi vince anche se la battaglia non è ancora finita
         timeline = battle.get('battle_timeline', [])
         if timeline:
+            #boost+damage diff
+            # --- Mean attack and defense boosts across timeline ---
+            p1_atk_boosts, p2_atk_boosts, p2_def_boosts, p1_def_boosts = [], [], [], []
+
+            for turn in timeline:
+                p1_boosts = turn.get("p1_pokemon_state", {}).get("boosts", {})
+                p2_boosts = turn.get("p2_pokemon_state", {}).get("boosts", {})
+                p1_atk_boosts.append(p1_boosts.get("atk", 0))
+                p2_atk_boosts.append(p2_boosts.get("atk", 0))
+                p1_def_boosts.append(p1_boosts.get("def", 0))
+                p2_def_boosts.append(p2_boosts.get("def", 0))
+
+            # Convert lists to NumPy arrays for vectorized math
+            p1_atk_boosts = np.array(p1_atk_boosts)
+            p2_atk_boosts = np.array(p2_atk_boosts)
+            p1_def_boosts = np.array(p1_def_boosts)
+            p2_def_boosts = np.array(p2_def_boosts)
+
+            # Retrieve average move damages
+            p1_move_damage_mean = move_damage_efficiency({
+                'battle_timeline': [t for t in timeline if t.get('p1_move_details')]
+            })
+            p2_move_damage_mean = move_damage_efficiency({
+                'battle_timeline': [t for t in timeline if t.get('p2_move_details')]
+            })
+
+            # Combine boost * damage - opponent defense_boost
+            # Measures per-turn offensive pressure
+
+            #non incrementa lo score considerando boost atk difesa e damage
+            # if len(p1_atk_boosts) and len(p2_def_boosts):
+            #     p1_synergy_vals = (p1_atk_boosts * p1_move_damage_mean) - p2_def_boosts
+            #     p2_synergy_vals = (p2_atk_boosts * p2_move_damage_mean) - p1_def_boosts
+            #     #features["p1_offensive_synergy"] = np.mean(p1_synergy_vals)
+            #     #features["p2_offensive_synergy"] = np.mean(p2_synergy_vals)
+            # else:
+            #     features["p1_offensive_synergy"] = 0.0
+            #     #features["p2_offensive_synergy"] = 0.0
+
+            #features["p2_offensive_synergy"] = (1 + mean_p2_atk_boost) * p2_move_damage_mean / (1 + p1_mean_def)
+            """
+            # --- Boost + Damage Combined Advantage ---
+
+            # Calcolo media danno per player 1 e 2
+            p1_move_damage_mean = move_damage_efficiency({
+                'battle_timeline': [t for t in timeline if t.get('p1_move_details')]
+            })
+            p2_move_damage_mean = move_damage_efficiency({
+                'battle_timeline': [t for t in timeline if t.get('p2_move_details')]
+            })
+            diff_move_damage_mean = p1_move_damage_mean - p2_move_damage_mean
+
+            # Calcolo media differenze di boost nei 30 turni
+            boost_keys = ["atk", "def", "spa", "spd", "spe"]
+            turn_diffs = []
+            for turn in timeline:
+                p1_boosts = turn.get("p1_pokemon_state", {}).get("boosts", {})
+                p2_boosts = turn.get("p2_pokemon_state", {}).get("boosts", {})
+                if not p1_boosts or not p2_boosts:
+                    continue
+                diffs = [p1_boosts.get(k, 0) - p2_boosts.get(k, 0) for k in boost_keys]
+                turn_diffs.append(np.mean(diffs))
+
+            mean_boost_diff = np.mean(turn_diffs) if turn_diffs else 0.0
+
+            # Combina boost e danno in una singola feature
+            boost_damage_advantage = 0.0
+            try:
+                boost_damage_advantage = diff_move_damage_mean * mean_boost_diff
+            except:
+                boost_damage_advantage = 0.0
+                print("err")#exit(diff_move_damage_mean,mean_boost_diff)
+            #drop 0.1% !!rivedi
+            #features["boost_damage_advantage"] = boost_damage_advantage
+            """
+
+
             #level diff
             # --- Average level difference during battle (only when both levels known) ---
             # level_diffs = []
@@ -662,22 +782,8 @@ def create_simple_features(data: list[dict]) -> pd.DataFrame:
             #features['p2_mean_hp_pct'] = np.mean(p2_hp)
             #vantaggio medio in salute (media della differenza tra la salute dei pokemon del primo giocatore e quella dei pokemon del secondo giocatore)
             features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))
-            # TEST5V--- MOVE DAMAGE EFFICIENCY (uses helper) ---
-            p1_move_damage_mean = move_damage_efficiency({
-                'battle_timeline': [
-                    t for t in timeline if t.get('p1_move_details')
-                ]
-            })
-            p2_move_damage_mean = move_damage_efficiency({
-                'battle_timeline': [
-                    t for t in timeline if t.get('p2_move_details')
-                ]
-            })
-            #!! ritornaci sembra peggiorare lo score
-            diff_move_damage_mean = p1_move_damage_mean - p2_move_damage_mean
-            #features['p1_move_damage_mean'] = p1_move_damage_mean
-            #features['p2_move_damage_mean'] = p2_move_damage_mean
-            #features['diff_move_damage_mean'] = diff_move_damage_mean
+            
+            
             """6 (performance drop)
             # --- FIRST STRIKE RATIO / TEMPO ADVANTAGE (uses helper) ---
             features['p1_first_strike_ratio'] = first_strike_ratio(battle)
