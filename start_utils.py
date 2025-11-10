@@ -33,7 +33,16 @@ type_chart = {
     "Steel":      {"Fire":0.5, "Water":0.5, "Electric":0.5, "Ice":2.0, "Rock":2.0, "Fairy":2.0, "Steel":0.5},
     "Fairy":      {"Fire":0.5, "Fighting":2.0, "Poison":0.5, "Dragon":2.0, "Dark":2.0, "Steel":0.5}
 }
-
+def extract_features_by_importance(final_pipe, features):
+    logreg = final_pipe.named_steps["logreg"]
+    weights = logreg.coef_[0]   # shape (n_features,)
+    intercept = logreg.intercept_[0]
+    coef_df = pd.DataFrame({
+        "feature": features,
+        "weight": weights,
+        "abs_weight": np.abs(weights)
+    }).sort_values(by="abs_weight", ascending=False)
+    return coef_df
 #feature hp_advantage_trend
 #83.87% (+/- 0.60%) => 83.89% (+/- 0.58%)
 def hp_advantage_trend(battle):

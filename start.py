@@ -1,6 +1,11 @@
 import os
 
-from start_utils import create_features, read_train_data, read_test_data, train, train_regularization, predict_and_submit
+from start_utils import (
+    create_features, read_train_data, 
+    read_test_data, 
+    train, train_regularization, 
+    extract_features_by_importance,
+    predict_and_submit)
 
 #1 read and prepare
 COMPETITION_NAME = 'fds-pokemon-battles-prediction-2025'
@@ -34,5 +39,17 @@ y = train_df['player_won']
 #3. TRAIN
 #pipe = train(X,y)
 pipe = train_regularization(X,y)
+extracted_features_and_weights = extract_features_by_importance(pipe, features)
+print(f"extracted_features_and_weights under linearity assumption: {extracted_features_and_weights}")
+# with open("extracted_features_and_weights.txt", "w") as f:
+#     f.write(extracted_features_and_weights.to_string())
+extracted_features_and_weights.to_csv("extracted_features_and_weights_model83.89.csv", index=False)
+#final_pipe = simple_train(X_selected,y)#creates and fits pipe
+import json
+with open("features_list_model83.89.json", "w") as f:
+    json.dump(features, f)
+
+
+
 #4 SUBMIT
 predict_and_submit(test_df, features, pipe)
