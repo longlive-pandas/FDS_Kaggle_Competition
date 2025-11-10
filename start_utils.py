@@ -11,6 +11,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, GridSearchCV
 import os
+def default(o):
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, (np.floating,)):
+        return float(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)  # fallback
 # superefficace 2
 # non molto efficace 0.5
 # non efficace 0
@@ -34,7 +42,16 @@ type_chart = {
     "Steel":      {"Fire":0.5, "Water":0.5, "Electric":0.5, "Ice":2.0, "Rock":2.0, "Fairy":2.0, "Steel":0.5},
     "Fairy":      {"Fire":0.5, "Fighting":2.0, "Poison":0.5, "Dragon":2.0, "Dark":2.0, "Steel":0.5}
 }
-
+def extract_features_by_importance(final_pipe, features):
+    logreg = final_pipe.named_steps["logreg"]
+    weights = logreg.coef_[0]   # shape (n_features,)
+    intercept = logreg.intercept_[0]
+    coef_df = pd.DataFrame({
+        "feature": features,
+        "weight": weights,
+        "abs_weight": np.abs(weights)
+    }).sort_values(by="abs_weight", ascending=False)
+    return coef_df
 #feature hp_advantage_trend
 #83.87% (+/- 0.60%) => 83.89% (+/- 0.58%)
 def hp_advantage_trend(battle):
@@ -709,7 +726,7 @@ def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, fl
         features['p1_status_move_rate'] = 0.0
         
     return features
-def create_features(data: list[dict]) -> pd.DataFrame:
+def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
     status_change_diff = []
@@ -733,7 +750,7 @@ def create_features(data: list[dict]) -> pd.DataFrame:
                     pokemon_dict[name] = set()
                 pokemon_dict[name].update(types)
     for battle in tqdm(data, desc="Extracting features"):
-
+        battle_id = battle.get("battle_id")#debugging purposes
         features = {}
         # --- Player 1 Team Features ---
         p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
@@ -1049,8 +1066,12 @@ def create_features(data: list[dict]) -> pd.DataFrame:
             #CHECK 84.31% (+/- 1.09%) => 84.35% (+/- 1.07%)
             features['nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1-nr_pokemon_sconfitti_p2
             #DOVREBBERO ESSERE BOMBA VITA DELLE DUE SQUADRE DOPO I 30 TURNI
-            features['p1_pct_final_hp'] =np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
-            features['p2_pct_final_hp'] =np.sum(list(p2_hp_final.values()))+(6-len(p1_hp_final.keys()))
+            features['p1_pct_final_hp'] = np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
+            # if is_test and battle_id == 5:
+            #     print("debug: ",np.sum(list(p2_hp_final.values())),6-len(p2_hp_final.keys()),
+            #           np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys())))
+            #     exit()
+            features['p2_pct_final_hp'] = np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys()))
             #SAREBBE CLAMOROSO NORMALIZZARLA ANCHE IN BASE ALLA DIFFERENZA DI VITA ASSOLUTA DEI POCKEMON LEADER DEI 2 PLAYER
             
             diff_final_hp = features['p1_pct_final_hp']-features['p2_pct_final_hp']
@@ -1168,7 +1189,12 @@ def create_features(data: list[dict]) -> pd.DataFrame:
         #CHECK 84.45% (+/- 1.00%) => 84.44% (+/- 0.99%)
         features.update(calculate_interaction_features(features))
         # We also need the ID and the target variable (if it exists)
-        features['battle_id'] = battle.get('battle_id')
+        
+        # if is_test and battle_id == 5:
+        #     with open("battle_5_features.json", "w", encoding="utf-8") as f:
+        #         json.dump(features, f, ensure_ascii=False, indent=4, default=default)
+        #     exit()
+        features['battle_id'] = battle_id
         if 'player_won' in battle:
             features['player_won'] = int(battle['player_won'])
 
@@ -1224,32 +1250,32 @@ def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
     """
     # --- Refit on all data automatically (refit=True) ---
     best_model = grid_search.best_estimator_
-    for s in [
-        1039284721,
-        398172634,
-        2750193806,
-        198234176,
-        4129837512,
-        1298374650,
-        3029487619,
-        718236451,
-        2543197682,
-        1765432987,
-        389124765,
-        612984372,
-        2983716540,
-        830174562,
-        1229837465,
-        4198372651,
-        2378164529,
-        3487612098,
-        954613287,
-        1864293754,
-    ]:
-    #for s in [42, 1234, 999, 2023]:
-        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=s)
-        scores = cross_val_score(best_model, X, y, cv=skf)
-        print(f"Seed {s}: {scores.mean():.4f} ± {scores.std():.4f}")
+    """
+    10/11/2025 9.36
+
+    Best params: {'logreg__C': 10, 'logreg__penalty': 'l1', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.9139 ± 0.0062
+    Seed 1039284721: 0.8422 ± 0.0090
+    Seed 398172634: 0.8431 ± 0.0069
+    Seed 2750193806: 0.8431 ± 0.0079
+    Seed 198234176: 0.8418 ± 0.0017
+    Seed 4129837512: 0.8432 ± 0.0071
+    Seed 1298374650: 0.8434 ± 0.0087
+    Seed 3029487619: 0.8434 ± 0.0079
+    Seed 718236451: 0.8449 ± 0.0026
+    Seed 2543197682: 0.8430 ± 0.0093
+    Seed 1765432987: 0.8423 ± 0.0066
+    Seed 389124765: 0.8437 ± 0.0063
+    Seed 612984372: 0.8417 ± 0.0057
+    Seed 2983716540: 0.8430 ± 0.0059
+    Seed 830174562: 0.8430 ± 0.0068
+    Seed 1229837465: 0.8439 ± 0.0067
+    Seed 4198372651: 0.8441 ± 0.0059
+    Seed 2378164529: 0.8423 ± 0.0043
+    Seed 3487612098: 0.8430 ± 0.0064
+    Seed 954613287: 0.8428 ± 0.0049
+    Seed 1864293754: 0.8424 ± 0.0045
+    """
     return best_model
 from sklearn.model_selection import cross_val_score, KFold
 import numpy as np
@@ -1274,127 +1300,107 @@ def random_bucket_feature_search_robust(
     bucket_size=25,
     cv=5,
     seed_list=[42, 1234, 999, 2023],
-    C=10,                        # you can tune or dynamically adjust if you want
+    C=10,
     try_subsets=True,
     verbose=True
 ):
     """
-    Random bucket-based feature search with robust scoring:
-    For each bucket, score = min(mean CV over multiple seeds).
-    
-    Args:
-        X (pd.DataFrame): Feature dataframe.
-        y (pd.Series): Target labels.
-        n_buckets (int): Number of random subsets to try.
-        bucket_size (int): Number of features per random subset.
-        cv (int): Cross-validation folds.
-        seed_list (list): Seeds for robust evaluation.
-        C (float): Regularization strength for LogisticRegression.
-        try_subsets (bool): Try smaller subsets inside each bucket.
-        verbose (bool): Print progress messages.
-
-    Returns:
-        dict: results with best_score, best_features, and full bucket_scores dataframe.
+    Leak-free robust random bucket feature selection.
+    Score = min(CV mean accuracy across multiple seeds).
     """
-    
+
     all_features = list(X.columns)
-    bucket_results = []
+    bucket_records = []
 
-    best_score = -np.inf
-    best_features = None
+    best_global_score = -np.inf
+    best_global_features = None
 
-    # fixed model with robust L2 regularization
+    # --- Scoring function (fresh model every time, no leakage)
     def score_features(features):
         X_subset = X[features]
-
-        # compute mean CV score for each seed
         seed_scores = []
+
         for seed in seed_list:
             skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=seed)
 
             pipe = Pipeline([
                 ("scaler", StandardScaler()),
                 ("logreg", LogisticRegression(
-                    solver="lbfgs",
-                    penalty="l2",
-                    C=C,
-                    max_iter=4000
-                ))
+                    C=C, penalty="l2", solver="lbfgs", max_iter=4000))
             ])
 
-            cv_scores = cross_val_score(
-                pipe, X_subset, y,
-                cv=skf,
-                scoring='accuracy',
-                n_jobs=-1
+            scores = cross_val_score(
+                pipe, X_subset, y, cv=skf, scoring='accuracy', n_jobs=-1
             )
-            seed_scores.append(np.mean(cv_scores))
+            seed_scores.append(np.mean(scores))
 
-        # robust metric: minimum across seeds
+        # robust metric
         return min(seed_scores)
 
-    # --- Main loop ---
-    with open("bucket_results.txt", "a") as f:
-        
+    # --- Main bucket loop ---
+    with open("bucket_results.txt", "w") as f:
 
         for i in range(1, n_buckets + 1):
-            start = time.time()
-            # Step 1: pick random features
-            sampled_features = random.sample(all_features, min(bucket_size, len(all_features)))
+            start_time = time.time()
+            # Sample random features
+            sampled = random.sample(all_features, min(bucket_size, len(all_features)))
 
-            # Step 2: robust score across seeds
-            base_score = score_features(sampled_features)
+            # score entire bucket
+            bucket_score = score_features(sampled)
+            best_bucket_score = bucket_score
+            best_bucket_feats = sampled
 
-            best_bucket_score = base_score
-            best_bucket_features = sampled_features
-
-            # Step 3: optional refinement inside the bucket
+            # Try internal subsets for local optimization
             if try_subsets:
-                for j in range(bucket_size - 1, 5, -1):   # reducing from bucket_size down to 5
-                    reduced_features = random.sample(sampled_features, j)
-                    reduced_score = score_features(reduced_features)
+                for k in range(bucket_size - 1, 5, -1):
+                    candidate = random.sample(sampled, k)
+                    candidate_score = score_features(candidate)
 
-                    if reduced_score > best_bucket_score:
-                        best_bucket_score = reduced_score
-                        best_bucket_features = reduced_features
+                    if candidate_score > best_bucket_score:
+                        best_bucket_score = candidate_score
+                        best_bucket_feats = candidate
 
-            bucket_results.append({
+            # Save results
+            bucket_records.append({
                 "bucket": i,
                 "score": best_bucket_score,
-                "features": best_bucket_features,
-                "n_features": len(best_bucket_features)
+                "n_features": len(best_bucket_feats),
+                "features": best_bucket_feats,
             })
 
+            # Logging
             if verbose:
-                f.write(f"C={C}, Bucket {i:3d} → robust CV={best_bucket_score:.4f} ({len(best_bucket_features)} features: {best_bucket_features})\n")
-                print(f"Bucket {i:3d} → robust CV={best_bucket_score:.4f} ({len(best_bucket_features)} features)")
+                print(f"Bucket {i}/{n_buckets} → robust CV={best_bucket_score:.4f} "
+                      f"({len(best_bucket_feats)} features)")
+                f.write(f"Bucket {i}: {best_bucket_score:.4f} "
+                        f"({len(best_bucket_feats)} features)\n")
 
-            # Step 4: update global best
-            if best_bucket_score > best_score:
-                best_score = best_bucket_score
-                best_features = best_bucket_features
-            end = time.time()
-            f.write(f"Bucket {i} took {end-start} time\n")
-            print(f"Bucket {i} took {end-start} time")
+            # update global best
+            if best_bucket_score > best_global_score:
+                best_global_score = best_bucket_score
+                best_global_features = best_bucket_feats
+
+            # timing
+            elapsed = time.time() - start_time
+            if verbose:
+                print(f"Time: {elapsed:.2f}s")
+            f.write(f"Time: {elapsed:.2f}s\n")
             f.flush()
             os.fsync(f.fileno())
 
-        results_df = pd.DataFrame(bucket_results).sort_values(
-            by="score", ascending=False
-        ).reset_index(drop=True)
+    # final results
+    df = pd.DataFrame(bucket_records).sort_values(
+        by="score", ascending=False
+    ).reset_index(drop=True)
 
-        if verbose:
-            f.write(f"Best bucket found:\n")
-            f.write(f"Score: {best_score:.4f} with {len(best_features)} features\n")
-            f.write(f"Top features:{best_features}\n")
-            print("\nBest bucket found:")
-            print(f"Score: {best_score:.4f} with {len(best_features)} features")
-            print("Top features:", best_features)
+    print("\n✅ Best subset found!")
+    print(f"Score: {best_global_score:.4f} using {len(best_global_features)} features")
+    print(best_global_features)
 
     return {
-        "best_score": best_score,
-        "best_features": best_features,
-        "bucket_scores": results_df
+        "best_score": best_global_score,
+        "best_features": best_global_features,
+        "bucket_scores": df
     }
 
 from sklearn.model_selection import StratifiedKFold, cross_val_score
@@ -1541,6 +1547,55 @@ def simple_train(X,y):
 #     steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=1234)))
 
 #     return Pipeline(steps)
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import accuracy_score
+import numpy as np
+
+def tune_threshold(model, X, y):
+    # Predict probabilities with CV
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    # cross_val_predict uses the model properly inside folds
+    probs = cross_val_predict(model, X, y, cv=skf, method='predict_proba')[:, 1]
+
+    thresholds = np.linspace(0.3, 0.7, 401)  # from 0.30 to 0.70 in steps of 0.001
+    accuracies = [accuracy_score(y, probs > t) for t in thresholds]
+
+    best_idx = np.argmax(accuracies)
+    best_threshold = thresholds[best_idx]
+    best_acc = accuracies[best_idx]
+
+    print(f"Best threshold: {best_threshold:.3f}")
+    print(f"Best CV accuracy: {best_acc:.4f}")
+
+    return best_threshold
+
+"""
+10/11/2025 9.16
+Fitting 5 folds for each of 34 candidates, totalling 170 fits
+Best params: {'logreg__C': 30, 'logreg__penalty': 'l1', 'logreg__solver': 'liblinear'}
+Best CV mean: 0.8442 ± 0.0039
+Seed 1039284721: 0.8429 ± 0.0070
+Seed 398172634: 0.8436 ± 0.0075
+Seed 2750193806: 0.8435 ± 0.0092
+Seed 198234176: 0.8429 ± 0.0032
+Seed 4129837512: 0.8436 ± 0.0078
+Seed 1298374650: 0.8439 ± 0.0096
+Seed 3029487619: 0.8433 ± 0.0094
+Seed 718236451: 0.8456 ± 0.0028
+Seed 2543197682: 0.8435 ± 0.0099
+Seed 1765432987: 0.8443 ± 0.0093
+Seed 389124765: 0.8440 ± 0.0077
+Seed 612984372: 0.8424 ± 0.0062
+Seed 2983716540: 0.8428 ± 0.0054
+Seed 830174562: 0.8430 ± 0.0071
+Seed 1229837465: 0.8445 ± 0.0061
+Seed 4198372651: 0.8442 ± 0.0057
+Seed 2378164529: 0.8433 ± 0.0040
+Seed 3487612098: 0.8442 ± 0.0069
+Seed 954613287: 0.8438 ± 0.0041
+Seed 1864293754: 0.8438 ± 0.0037
+"""
 def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     """
     Builds a logistic regression pipeline and runs grid search + stability checks.
@@ -1562,49 +1617,88 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     pipe = Pipeline(steps)
 
     # --- Parameter grid ---
+    # param_grid = [
+    #     # L1 and L2 with liblinear
+    #     {
+    #         'logreg__solver': ['liblinear'],
+    #         'logreg__penalty': ['l1', 'l2'],
+    #         'logreg__C': [0.01, 0.1, 1, 3
+    #                       #, 10, 30
+    #                       ],
+    #     },
+
+    #     # L2 with lbfgs
+    #     {
+    #         'logreg__solver': ['lbfgs'],
+    #         'logreg__penalty': ['l2'],
+    #         'logreg__C': [0.01, 0.1, 1
+    #                       #, 3, 10, 30, 100
+    #                       ],
+    #     },
+
+    #     # ElasticNet with saga
+    #     {
+    #         'logreg__solver': ['saga'],
+    #         'logreg__penalty': ['elasticnet'],
+    #         'logreg__l1_ratio': [0.1, 0.5, 0.9],
+    #         'logreg__C': [0.01, 0.1, 1
+    #                       #, 3, 10
+    #                       ],
+    #     }
+    # ]
+
+    # param_grid = {
+    #     'C': [0.01, 0.1, 1, 10],
+    #     'penalty': ['l1', 'l2'],
+    #     'solver': ['liblinear', 'lbfgs']
+    # }
     param_grid = [
         # L1 and L2 with liblinear
         {
             'logreg__solver': ['liblinear'],
             'logreg__penalty': ['l1', 'l2'],
-            'logreg__C': [0.01, 0.1, 1, 3, 10, 30],
+            'logreg__C': [0.01, 0.1, 1, 10],
         },
 
         # L2 with lbfgs
         {
             'logreg__solver': ['lbfgs'],
             'logreg__penalty': ['l2'],
-            'logreg__C': [0.01, 0.1, 1, 3, 10, 30, 100],
+            'logreg__C': [0.01, 0.1, 1, 10],
         },
-
-        # ElasticNet with saga
-        {
-            'logreg__solver': ['saga'],
-            'logreg__penalty': ['elasticnet'],
-            'logreg__l1_ratio': [0.1, 0.5, 0.9],
-            'logreg__C': [0.01, 0.1, 1, 3, 10],
-        }
     ]
-
     # --- Grid search with stratified 5-fold CV ---
     kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 
+    # grid_search = GridSearchCV(
+    #     estimator=pipe,
+    #     param_grid=param_grid,
+    #     scoring="accuracy",
+    #     cv=kfold,
+    #     n_jobs=-1,
+    #     verbose=1,
+    #     refit=True
+    # )
     grid_search = GridSearchCV(
         estimator=pipe,
         param_grid=param_grid,
-        scoring="accuracy",
-        cv=kfold,
-        n_jobs=-1,
-        verbose=1,
-        refit=True
+        scoring='roc_auc',#roc_auc
+        n_jobs=4,        # use 4 cores in parallel
+        cv=kfold,            # 5-fold cross-validation, more on this later
+        refit=True,      # retrain the best model on the full training set
+        return_train_score=True
     )
 
     return grid_search  # not fitted yet — caller will call `fit(X, y)`
-def predict_and_submit(test_df, features, pipe):
+def predict_and_submit(test_df, features, pipe, threshold=0.5):
     # Make predictions on the real test data
     X_test = test_df[features]
     print("Generating predictions on the test set...")
-    test_predictions = pipe.predict(X_test)
+    # Predict probabilities for Player 1 win
+    test_probs = pipe.predict_proba(X_test)[:, 1]
+
+    # Apply the optimized threshold
+    test_predictions = (test_probs > threshold).astype(int)
 
     # Create the submission DataFrame
     submission_df = pd.DataFrame({

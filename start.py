@@ -7,6 +7,8 @@ from start_utils import (
     greedy_feature_selection_dynamicC,
     #random_bucket_feature_search, 
     random_bucket_feature_search_robust,
+    tune_threshold,
+    extract_features_by_importance,
     predict_and_submit)
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -27,7 +29,7 @@ print("Processing training data...")
 train_df = create_features(train_data)
 
 print("\nProcessing test data...")
-test_df = create_features(test_data)
+test_df = create_features(test_data, is_test=True)
     
 print("\nTraining features preview:")
 #display(train_df.head())
@@ -324,11 +326,71 @@ Best candidate: diff_mean_stab | robust score = 0.8408 | Δ = 0.0003
 """ 
 selected = features#['p1_max_offensive_stat', 'p1_mean_sp', 'p1_cumulative_major_status_turns_pct', 'diff_def', 'mean_base_atk_diff_timeline', 'p1_n_pokemon_use', 'p1_hp_std', 'diff_atk', 'p2_cumulative_major_status_turns_pct', 'p1_bad_status_advantage', 'battle_duration', 'p1_mean_def', 'p1_avg_speed_stat_battaglia', 'mean_base_spa_diff_timeline', 'late_hp_mean_diff', 'nr_pokemon_sconfitti_p1', 'p1_type_weakness', 'p1_avg_high_speed_stat_battaglia', 'p1_pct_final_hp', 'p1_hp_advantage_mean', 'std_base_spa_diff_timeline', 'hp_diff_mean', 'std_base_spe_diff_timeline', 'diff_hp', 'p2_n_pokemon_use', 'p1_mean_atk', 'p2_hp_std', 'p2_major_status_infliction_rate', 'mean_base_spe_diff_timeline', 'hp_advantage_trend', 'p1_type_resistance', 'nr_pokemon_sconfitti_p2', 'priority_diff', 'diff_final_schieramento', 'p1_type_diversity', 'p1_mean_spe', 'p1_major_status_infliction_rate', 'expected_damage_ratio_turn_1', 'hp_loss_rate']
 #now that I know which features are best I fit my model to these and submit
-selected = ['net_major_status_infliction', 'battle_duration', 'p1_max_offense_boost_diff', 'diff_final_hp', 'std_base_spa_diff_timeline', 'nr_pokemon_sconfitti_p1', 'p1_avg_high_speed_stat_battaglia', 'diff_spe', 'expected_damage_ratio_turn_1', 'hp_loss_rate', 'p2_cumulative_major_status_turns_pct', 'p1_mean_spe', 'p1_type_resistance', 'p1_max_speed_offense_product', 'nr_pokemon_sconfitti_p2', 'p2_hp_std', 'net_major_status_suffering', 'p2_n_pokemon_use', 'p1_type_weakness', 'diff_mean_stab', 'p1_mean_sp', 'p1_cumulative_major_status_turns_pct', 'p1_mean_def', 'hp_delta_std', 'mean_base_spa_diff_timeline', 'p1_n_pokemon_use', 'p1_mean_stab', 'diff_spd', 'p2_mean_stab', 'diff_hp', 'mean_base_atk_diff_timeline', 'p1_type_diversity', 'status_change_diff', 'diff_type_advantage', 'priority_diff', 'std_base_spe_diff_timeline', 'diff_final_schieramento', 'p1_mean_hp', 'p1_pct_final_hp', 'p2_pct_final_hp', 'p2_major_status_infliction_rate', 'p1_hp_advantage_mean', 'p1_max_speed_stat', 'diff_atk', 'nr_pokemon_sconfitti_diff', 'hp_advantage_trend', 'std_base_atk_diff_timeline', 'hp_delta_trend', 'late_hp_mean_diff', 'p1_bad_status_advantage', 'p1_major_status_infliction_rate']
+#selected = ['net_major_status_infliction', 'battle_duration', 'p1_max_offense_boost_diff', 'diff_final_hp', 'std_base_spa_diff_timeline', 'nr_pokemon_sconfitti_p1', 'p1_avg_high_speed_stat_battaglia', 'diff_spe', 'expected_damage_ratio_turn_1', 'hp_loss_rate', 'p2_cumulative_major_status_turns_pct', 'p1_mean_spe', 'p1_type_resistance', 'p1_max_speed_offense_product', 'nr_pokemon_sconfitti_p2', 'p2_hp_std', 'net_major_status_suffering', 'p2_n_pokemon_use', 'p1_type_weakness', 'diff_mean_stab', 'p1_mean_sp', 'p1_cumulative_major_status_turns_pct', 'p1_mean_def', 'hp_delta_std', 'mean_base_spa_diff_timeline', 'p1_n_pokemon_use', 'p1_mean_stab', 'diff_spd', 'p2_mean_stab', 'diff_hp', 'mean_base_atk_diff_timeline', 'p1_type_diversity', 'status_change_diff', 'diff_type_advantage', 'priority_diff', 'std_base_spe_diff_timeline', 'diff_final_schieramento', 'p1_mean_hp', 'p1_pct_final_hp', 'p2_pct_final_hp', 'p2_major_status_infliction_rate', 'p1_hp_advantage_mean', 'p1_max_speed_stat', 'diff_atk', 'nr_pokemon_sconfitti_diff', 'hp_advantage_trend', 'std_base_atk_diff_timeline', 'hp_delta_trend', 'late_hp_mean_diff', 'p1_bad_status_advantage', 'p1_major_status_infliction_rate']
+"""
+10/11/2025 9.26
+Best params: {'logreg__C': 1, 'logreg__l1_ratio': 0.9, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+Best CV mean: 0.8441 ± 0.0045
+Seed 1039284721: 0.8437 ± 0.0067
+Seed 398172634: 0.8436 ± 0.0077
+Seed 2750193806: 0.8426 ± 0.0092
+Seed 198234176: 0.8431 ± 0.0029
+Seed 4129837512: 0.8434 ± 0.0076
+Seed 1298374650: 0.8441 ± 0.0094
+Seed 3029487619: 0.8431 ± 0.0092
+Seed 718236451: 0.8453 ± 0.0026
+Seed 2543197682: 0.8432 ± 0.0106
+Seed 1765432987: 0.8440 ± 0.0091
+Seed 389124765: 0.8442 ± 0.0079
+Seed 612984372: 0.8427 ± 0.0062
+Seed 2983716540: 0.8432 ± 0.0062
+Seed 830174562: 0.8438 ± 0.0071
+Seed 1229837465: 0.8448 ± 0.0071
+Seed 4198372651: 0.8446 ± 0.0056
+Seed 2378164529: 0.8430 ± 0.0041
+Seed 3487612098: 0.8443 ± 0.0069
+Seed 954613287: 0.8445 ± 0.0031
+Seed 1864293754: 0.8438 ± 0.0049
+Generating predictions on the test set...
+
+9.29
+Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+Best CV mean: 0.8427 ± 0.0043
+Seed 1039284721: 0.8406 ± 0.0091
+Seed 398172634: 0.8413 ± 0.0073
+Seed 2750193806: 0.8413 ± 0.0096
+Seed 198234176: 0.8419 ± 0.0015
+Seed 4129837512: 0.8398 ± 0.0075
+Seed 1298374650: 0.8426 ± 0.0086
+Seed 3029487619: 0.8409 ± 0.0081
+Seed 718236451: 0.8428 ± 0.0039
+Seed 2543197682: 0.8424 ± 0.0102
+Seed 1765432987: 0.8424 ± 0.0094
+Seed 389124765: 0.8419 ± 0.0070
+Seed 612984372: 0.8401 ± 0.0066
+Seed 2983716540: 0.8406 ± 0.0053
+Seed 830174562: 0.8413 ± 0.0080
+Seed 1229837465: 0.8423 ± 0.0064
+Seed 4198372651: 0.8412 ± 0.0053
+Seed 2378164529: 0.8418 ± 0.0042
+Seed 3487612098: 0.8427 ± 0.0068
+Seed 954613287: 0.8411 ± 0.0037
+Seed 1864293754: 0.8415 ± 0.0044
+"""
 X_selected = X[selected]
+print(f"selected shape={X_selected.shape}")
 final_pipe = train_regularization(X_selected,y)
+
+extracted_features_and_weights = extract_features_by_importance(final_pipe, selected)
+print(f"extracted_features_and_weights under linearity assumption: {extracted_features_and_weights}")
+# with open("extracted_features_and_weights.txt", "w") as f:
+#     f.write(extracted_features_and_weights.to_string())
+extracted_features_and_weights.to_csv("extracted_features_and_weights.csv", index=False)
 #final_pipe = simple_train(X_selected,y)#creates and fits pipe
-predict_and_submit(test_df, selected, final_pipe)
+# Tune threshold on the training data
+best_threshold = tune_threshold(final_pipe, X_selected, y)
+predict_and_submit(test_df, features, final_pipe, threshold=best_threshold)
+
 
 
 """
