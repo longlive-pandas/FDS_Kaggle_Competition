@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, GridSearchCV
+import os
 # superefficace 2
 # non molto efficace 0.5
 # non efficace 0
@@ -589,6 +590,125 @@ def calculate_interaction_features(features: Dict[str, float]) -> Dict[str, floa
     
     return features
 
+from typing import Dict, Any, List
+import numpy as np
+
+def calculate_dynamic_boost_features(battle: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Calculates features tracking the dynamic stat boost advantage (e.g., Swords Dance, Amnesia)
+    gained by P1 relative to P2 across the timeline.
+    """
+    features = {}
+    timeline = battle.get('battle_timeline', [])
+    
+    if not timeline:
+        return {
+            'p1_net_boost_sum': 0.0,
+            'p1_max_offense_boost_diff': 0.0,
+            'p1_max_speed_boost_diff': 0.0
+        }
+
+    net_boost_list = []
+    offense_boost_diff_list = []
+    speed_boost_diff_list = []
+
+    for turn in timeline:
+        p1_boosts = turn.get("p1_pokemon_state", {}).get("boosts", {})
+        p2_boosts = turn.get("p2_pokemon_state", {}).get("boosts", {})
+        
+        # Boost levels can be -6 to +6. Boosts in the data are typically stat stage changes.
+        
+        # P1 Total Boost Sum vs P2 Total Boost Sum
+        p1_total_boost = sum(p1_boosts.values())
+        p2_total_boost = sum(p2_boosts.values())
+        net_boost_list.append(p1_total_boost - p2_total_boost)
+        
+        # P1 Offensive Boost (atk + spa) vs P2 Offensive Boost
+        p1_offense_boost = p1_boosts.get('atk', 0) + p1_boosts.get('spa', 0)
+        p2_offense_boost = p2_boosts.get('atk', 0) + p2_boosts.get('spa', 0)
+        offense_boost_diff_list.append(p1_offense_boost - p2_offense_boost)
+
+        # P1 Speed Boost vs P2 Speed Boost
+        p1_speed_boost = p1_boosts.get('spe', 0)
+        p2_speed_boost = p2_boosts.get('spe', 0)
+        speed_boost_diff_list.append(p1_speed_boost - p2_speed_boost)
+
+    # 1. Net Cumulative Boost Sum
+    # A positive sum indicates P1 spent more turns with a higher boost level than P2.
+    features['p1_net_boost_sum'] = np.sum(net_boost_list)
+
+    # 2. Maximum Offensive Boost Differential
+    # Captures the peak offensive setup advantage.
+    features['p1_max_offense_boost_diff'] = np.max(offense_boost_diff_list) if offense_boost_diff_list else 0.0
+
+    # 3. Maximum Speed Boost Differential
+    # Captures the peak speed advantage gained via boost moves.
+    features['p1_max_speed_boost_diff'] = np.max(speed_boost_diff_list) if speed_boost_diff_list else 0.0
+    
+    return features
+
+from typing import Dict, Any, List
+
+def calculate_team_coverage_features(battle: Dict[str, Any], type_chart: Dict) -> Dict[str, float]:
+    """
+    Calculates P1's offensive coverage against P2's lead Pokémon.
+    """
+    features = {}
+    p1_team = battle.get('p1_team_details', [])
+    p2_lead = battle.get('p2_lead_details', {})
+    
+    if not p1_team or not p2_lead:
+        return {'p1_team_super_effective_moves': 0.0}
+
+    p2_defender_types = [t for t in p2_lead.get('types', []) if t != "notype"]
+    super_effective_count = 0
+    
+    # We only check P1's *Pokémon types*, assuming they carry moves of their own type (STAB).
+    # This is a strong proxy for offensive coverage.
+    for p1_poke in p1_team:
+        p1_poke_types = [t for t in p1_poke.get('types', []) if t != "notype"]
+        has_super_effective_type = False
+        
+        for p1_type in p1_poke_types:
+            # Check if this P1 type is Super Effective against any of P2's lead types
+            type_mult = get_type_multiplier(p1_type, p2_defender_types, type_chart)
+            if type_mult >= 2.0:
+                has_super_effective_type = True
+                break
+        
+        if has_super_effective_type:
+            super_effective_count += 1
+            
+    features['p1_team_super_effective_moves'] = float(super_effective_count)
+    return features
+
+def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Calculates P1's rate of using non-damaging (Status) moves.
+    """
+    features = {}
+    timeline = battle.get('battle_timeline', [])
+    
+    if not timeline:
+        return {'p1_status_move_rate': 0.0}
+
+    p1_status_move_count = 0
+    p1_total_moves = 0
+    
+    for turn in timeline:
+        p1_move = turn.get("p1_move_details")
+        
+        if p1_move and p1_move.get("category"):
+            p1_total_moves += 1
+            if p1_move["category"].upper() == "STATUS":
+                p1_status_move_count += 1
+    
+    if p1_total_moves > 0:
+        features['p1_status_move_rate'] = p1_status_move_count / p1_total_moves
+    else:
+        features['p1_status_move_rate'] = 0.0
+        
+    return features
 def create_features(data: list[dict]) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
@@ -629,7 +749,83 @@ def create_features(data: list[dict]) -> pd.DataFrame:
         features['p2_major_status_infliction_rate'] = p2_status_features['p2_major_status_infliction_rate']
         features['p2_cumulative_major_status_turns_pct'] = p2_status_features['p2_cumulative_major_status_turns_pct']
         
+        ###
+        dynamic_boost_features = calculate_dynamic_boost_features(battle)
+        """
+        Mancano 1,2; 1,3
+        1,2,3 NO da 8394
+        Fitting 5 folds for each of 34 candidates, totalling 170 fits
+        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+        Best CV mean: 0.8428 ± 0.0041 (da 8394 a 8429)
+        It took 104.46463012695312 time
+
+        1
+        Fitting 5 folds for each of 34 candidates, totalling 170 fits
+        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.1, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+        Best CV mean: 0.8429 ± 0.0046 (da 8408 a 8430)
+        It took 79.87716317176819 time
+        """
+        #features['p1_net_boost_sum'] = dynamic_boost_features['p1_net_boost_sum']
+        """
+        1,2 NO
+        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+        Best CV mean: 0.8428 ± 0.0043 (da 8397 a 8426)
+        """
+        """
+        2,3 NO
+        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+        Best CV mean: 0.8427 ± 0.0048 (da 8416 a 8451)
+        It took 51.33575224876404 time
+        """
+
+        """
+        2 molto buono
+        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+        Best CV mean: 0.8427 ± 0.0042 (da 8419 a 8451)
+        It took 52.9518678188324 time
+        """
+        features['p1_max_offense_boost_diff'] = dynamic_boost_features['p1_max_offense_boost_diff']
+        """
+        3
+        Best CV mean: 0.8428 ± 0.0041 (da 8413 a 8444)
+        It took 284.0617139339447 time
+        """
         
+        #features['p1_max_speed_boost_diff'] = dynamic_boost_features['p1_max_speed_boost_diff']
+        
+
+        ####
+        """
+        nessuno
+        Best CV mean: 0.8442 ± 0.0041 (da 8419 a 8451)
+
+        1,2
+        Fitting 5 folds for each of 34 candidates, totalling 170 fits
+        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8434)
+        """
+
+        """
+        1 CHOSEN (improved min, same max, decrease best)
+        Fitting 5 folds for each of 34 candidates, totalling 170 fits
+        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+        Best CV mean: 0.8427 ± 0.0042 (da 8420 a 8451)
+        """
+
+        """
+        2
+        Fitting 5 folds for each of 34 candidates, totalling 170 fits
+        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8435)
+        """
+        # Integrate Team Coverage (Step 4)
+        #print("calculating p1_team_super_effective_moves")
+        p1_team_super_effective_moves = calculate_team_coverage_features(battle, type_chart)
+        features['p1_team_super_effective_moves'] = p1_team_super_effective_moves['p1_team_super_effective_moves']
+        
+        # Integrate Action Efficiency (Step 5)
+        p1_status_move_rate = calculate_action_efficiency_features(battle)
+        #features['p1_status_move_rate'] = p1_status_move_rate['p1_status_move_rate']
         ####
         ##
         expected_damage_ratio_turn_1 = 0.0
@@ -1002,65 +1198,12 @@ def read_test_data(test_file_path):
             test_data.append(json.loads(line))
     return test_data
 
-def train_regularization(X, y):
-    USE_PCA = False
-    POLY_ENABLED = False
-    seed = 1234
-    # --- Build base pipeline ---
-    steps = []
-    if POLY_ENABLED:
-        steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
-
-    steps.append(("scaler", StandardScaler()))
-    if USE_PCA:
-        steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
-
-    steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=seed)))
-    pipe = Pipeline(steps)
-
-    # --- Define parameter grid for GridSearchCV ---
-    param_grid = [
-        # --- L1 and L2 with liblinear (good for sparse selection + small datasets) ---
-        {
-            'logreg__solver': ['liblinear'],
-            'logreg__penalty': ['l1', 'l2'],
-            'logreg__C': [0.01, 0.1, 1, 3, 10, 30],
-        },
-
-        # --- Pure L2 with lbfgs (fast, robust, handles many features well) ---
-        {
-            'logreg__solver': ['lbfgs'],
-            'logreg__penalty': ['l2'],  # only L2 is valid with lbfgs
-            'logreg__C': [0.01, 0.1, 1, 3, 10, 30, 100],
-        },
-
-        # --- ElasticNet with saga (good when features are noisy + correlated) ---
-        {
-            'logreg__solver': ['saga'],
-            'logreg__penalty': ['elasticnet'],
-            'logreg__l1_ratio': [0.1, 0.5, 0.9],
-            'logreg__C': [0.01, 0.1, 1, 3, 10],
-            # saga needs more iterations for convergence
-        }
-    ]
-
-
-
-    # --- Create GridSearchCV wrapper ---
-    #StratifiedKFold preserves class balance
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    grid_search = GridSearchCV(
-        estimator=pipe,
-        param_grid=param_grid,
-        scoring='accuracy',    # or 'roc_auc' if binary classification
-        cv=kfold,
-        n_jobs=-1,
-        verbose=1,
-        refit=True
-    )
-
-    # --- Fit grid search ---
-    #print("🔍 Performing Grid Search...")
+def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
+    # Build grid search pipeline
+    print("build pipe")
+    grid_search = build_pipe(USE_PCA=USE_PCA, POLY_ENABLED=POLY_ENABLED, seed=seed)
+    print("pipe built")
+    # Fit grid search
     grid_search.fit(X, y)
 
     # --- Show results ---
@@ -1081,7 +1224,29 @@ def train_regularization(X, y):
     """
     # --- Refit on all data automatically (refit=True) ---
     best_model = grid_search.best_estimator_
-    for s in [42, 1234, 999, 2023]:
+    for s in [
+        1039284721,
+        398172634,
+        2750193806,
+        198234176,
+        4129837512,
+        1298374650,
+        3029487619,
+        718236451,
+        2543197682,
+        1765432987,
+        389124765,
+        612984372,
+        2983716540,
+        830174562,
+        1229837465,
+        4198372651,
+        2378164529,
+        3487612098,
+        954613287,
+        1864293754,
+    ]:
+    #for s in [42, 1234, 999, 2023]:
         skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=s)
         scores = cross_val_score(best_model, X, y, cv=skf)
         print(f"Seed {s}: {scores.mean():.4f} ± {scores.std():.4f}")
@@ -1095,79 +1260,136 @@ from sklearn.model_selection import cross_val_score, KFold
 import numpy as np
 import pandas as pd
 
-def random_bucket_feature_search(
-    X, y, base_pipe, n_buckets=100, bucket_size=25, cv=5,
-    try_subsets=True, verbose=True
+import random
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+def random_bucket_feature_search_robust(
+    X, y,
+    n_buckets=100,
+    bucket_size=25,
+    cv=5,
+    seed_list=[42, 1234, 999, 2023],
+    C=10,                        # you can tune or dynamically adjust if you want
+    try_subsets=True,
+    verbose=True
 ):
     """
-    Random feature subset (bucket) selection.
-    Repeats random sampling of feature subsets and returns the best-performing one.
-
+    Random bucket-based feature search with robust scoring:
+    For each bucket, score = min(mean CV over multiple seeds).
+    
     Args:
         X (pd.DataFrame): Feature dataframe.
         y (pd.Series): Target labels.
-        base_pipe: sklearn pipeline (e.g., Logistic Regression pipeline).
         n_buckets (int): Number of random subsets to try.
         bucket_size (int): Number of features per random subset.
         cv (int): Cross-validation folds.
-        try_subsets (bool): If True, try reducing each bucket to smaller subsets for better score.
-        verbose (bool): Print progress info.
+        seed_list (list): Seeds for robust evaluation.
+        C (float): Regularization strength for LogisticRegression.
+        try_subsets (bool): Try smaller subsets inside each bucket.
+        verbose (bool): Print progress messages.
 
     Returns:
-        dict: {
-            "best_score": float,
-            "best_features": list,
-            "bucket_scores": pd.DataFrame
-        }
+        dict: results with best_score, best_features, and full bucket_scores dataframe.
     """
-    kfold = KFold(n_splits=cv, shuffle=True, random_state=42)
+    
     all_features = list(X.columns)
     bucket_results = []
 
     best_score = -np.inf
-    best_features = []
+    best_features = None
 
-    for i in range(1, n_buckets + 1):
-        # --- Step 1: pick random features ---
-        sampled_features = random.sample(all_features, min(bucket_size, len(all_features)))
-        X_subset = X[sampled_features]
+    # fixed model with robust L2 regularization
+    def score_features(features):
+        X_subset = X[features]
 
-        # --- Step 2: evaluate CV accuracy ---
-        base_score = np.mean(cross_val_score(base_pipe, X_subset, y, cv=kfold, scoring='accuracy', n_jobs=-1))
+        # compute mean CV score for each seed
+        seed_scores = []
+        for seed in seed_list:
+            skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=seed)
 
-        # --- Step 3: optional refinement (greedy reduction within the bucket) ---
-        best_bucket_score = base_score
-        best_bucket_features = sampled_features
+            pipe = Pipeline([
+                ("scaler", StandardScaler()),
+                ("logreg", LogisticRegression(
+                    solver="lbfgs",
+                    penalty="l2",
+                    C=C,
+                    max_iter=4000
+                ))
+            ])
 
-        if try_subsets:
-            for j in range(len(sampled_features) - 1, 5, -1):  # test smaller subsets
-                reduced_features = random.sample(sampled_features, j)
-                reduced_score = np.mean(cross_val_score(base_pipe, X[reduced_features], y, cv=kfold, scoring='accuracy', n_jobs=-1))
-                if reduced_score > best_bucket_score:
-                    best_bucket_score = reduced_score
-                    best_bucket_features = reduced_features
+            cv_scores = cross_val_score(
+                pipe, X_subset, y,
+                cv=skf,
+                scoring='accuracy',
+                n_jobs=-1
+            )
+            seed_scores.append(np.mean(cv_scores))
 
-        bucket_results.append({
-            "bucket": i,
-            "score": best_bucket_score,
-            "n_features": len(best_bucket_features),
-            "features": best_bucket_features
-        })
+        # robust metric: minimum across seeds
+        return min(seed_scores)
+
+    # --- Main loop ---
+    with open("bucket_results.txt", "a") as f:
+        
+
+        for i in range(1, n_buckets + 1):
+            start = time.time()
+            # Step 1: pick random features
+            sampled_features = random.sample(all_features, min(bucket_size, len(all_features)))
+
+            # Step 2: robust score across seeds
+            base_score = score_features(sampled_features)
+
+            best_bucket_score = base_score
+            best_bucket_features = sampled_features
+
+            # Step 3: optional refinement inside the bucket
+            if try_subsets:
+                for j in range(bucket_size - 1, 5, -1):   # reducing from bucket_size down to 5
+                    reduced_features = random.sample(sampled_features, j)
+                    reduced_score = score_features(reduced_features)
+
+                    if reduced_score > best_bucket_score:
+                        best_bucket_score = reduced_score
+                        best_bucket_features = reduced_features
+
+            bucket_results.append({
+                "bucket": i,
+                "score": best_bucket_score,
+                "features": best_bucket_features,
+                "n_features": len(best_bucket_features)
+            })
+
+            if verbose:
+                f.write(f"C={C}, Bucket {i:3d} → robust CV={best_bucket_score:.4f} ({len(best_bucket_features)} features: {best_bucket_features})\n")
+                print(f"Bucket {i:3d} → robust CV={best_bucket_score:.4f} ({len(best_bucket_features)} features)")
+
+            # Step 4: update global best
+            if best_bucket_score > best_score:
+                best_score = best_bucket_score
+                best_features = best_bucket_features
+            end = time.time()
+            f.write(f"Bucket {i} took {end-start} time\n")
+            print(f"Bucket {i} took {end-start} time")
+            f.flush()
+            os.fsync(f.fileno())
+
+        results_df = pd.DataFrame(bucket_results).sort_values(
+            by="score", ascending=False
+        ).reset_index(drop=True)
 
         if verbose:
-            print(f"Bucket {i:3d} → CV={best_bucket_score:.4f} ({len(best_bucket_features)} features)")
-
-        # --- Step 4: update global best ---
-        if best_bucket_score > best_score:
-            best_score = best_bucket_score
-            best_features = best_bucket_features
-
-    results_df = pd.DataFrame(bucket_results).sort_values(by="score", ascending=False).reset_index(drop=True)
-
-    if verbose:
-        print("\n🏆 Best bucket found:")
-        print(f"Score: {best_score:.4f} with {len(best_features)} features")
-        print("Top features:", best_features)
+            f.write(f"Best bucket found:\n")
+            f.write(f"Score: {best_score:.4f} with {len(best_features)} features\n")
+            f.write(f"Top features:{best_features}\n")
+            print("\nBest bucket found:")
+            print(f"Score: {best_score:.4f} with {len(best_features)} features")
+            print("Top features:", best_features)
 
     return {
         "best_score": best_score,
@@ -1175,58 +1397,125 @@ def random_bucket_feature_search(
         "bucket_scores": results_df
     }
 
-def greedy_feature_selection(X, y, base_pipe, cv=5, min_delta=0.0005, verbose=True):
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+import numpy as np
+import pandas as pd
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+import numpy as np
+import pandas as pd
+import time
+
+def greedy_feature_selection_dynamicC(
+    X, y,
+    cv=5,
+    seed_list=[42, 1234, 999, 2023],
+    C_grid=[0.1, 1, 3, 10, 30],
+    min_delta=0.0005,
+    verbose=True
+):
     """
-    Greedy forward feature selection using cross-validation score.
+    Greedy forward feature selection with dynamic C tuning.
+    Uses robustness metric: min(mean CV accuracy across seeds).
     
     Args:
-        X (pd.DataFrame): feature dataframe
-        y (pd.Series): target
-        base_pipe: sklearn pipeline (e.g. your Logistic Regression pipeline)
-        cv (int): number of cross-validation folds
-        min_delta (float): minimum improvement required to add a feature
-        verbose (bool): print progress
-        
+        X: pd.DataFrame
+        y: pd.Series
+        cv: # folds
+        seed_list: seeds for robust scoring
+        C_grid: candidate C values for tuning
+        min_delta: min improvement required to accept feature
+        verbose: print progress
+    
     Returns:
-        selected_features (list): features chosen by the greedy algorithm
-        history (pd.DataFrame): accuracy progression per iteration
+        selected_features, history_df
     """
-    kfold = KFold(n_splits=cv, shuffle=True, random_state=42)
+
+    start_time = time.time()
+
     remaining = list(X.columns)
-    selected = []#['p1_type_weakness']
+    selected = []
     best_score = 0.0
     history = []
 
     iteration = 0
+
     while remaining:
         iteration += 1
         scores_with_candidates = []
 
-        # Evaluate adding each remaining feature
+        if verbose:
+            print(f"\n--- Iteration {iteration} ---")
+            print(f"Remaining features: {len(remaining)} | Selected so far: {len(selected)}")
+
         for f in remaining:
             candidate_features = selected + [f]
             X_subset = X[candidate_features]
-            score = np.mean(cross_val_score(base_pipe, X_subset, y, cv=kfold, scoring='accuracy', n_jobs=-1))
-            scores_with_candidates.append((f, score))
 
-        # Pick the best feature this round
+            # Evaluate all C values for all seeds
+            C_scores = []  # will store robust score per C
+
+            for C in C_grid:
+                seed_scores = []
+
+                for seed in seed_list:
+                    kfold = StratifiedKFold(n_splits=cv, shuffle=True, random_state=seed)
+
+                    pipe = Pipeline([
+                        ("scaler", StandardScaler()),
+                        ("logreg", LogisticRegression(
+                            solver="lbfgs",
+                            penalty="l2",
+                            C=C,
+                            max_iter=4000
+                        ))
+                    ])
+
+                    cv_scores = cross_val_score(
+                        pipe,
+                        X_subset, y,
+                        cv=kfold,
+                        scoring='accuracy',
+                        n_jobs=-1
+                    )
+
+                    seed_scores.append(np.mean(cv_scores))
+
+                # robust score for this C = min mean across seeds
+                C_scores.append(min(seed_scores))
+
+            # best robust C score for this feature
+            best_C_score = max(C_scores)
+            scores_with_candidates.append((f, best_C_score))
+
+        # Best feature this iteration
         best_candidate, best_candidate_score = max(scores_with_candidates, key=lambda x: x[1])
         delta = best_candidate_score - best_score
+
+        if verbose:
+            print(f"Best candidate: {best_candidate} | robust score = {best_candidate_score:.4f} | Δ = {delta:.4f}")
 
         if delta > min_delta:
             selected.append(best_candidate)
             remaining.remove(best_candidate)
             best_score = best_candidate_score
             if verbose:
-                print(f"Step {iteration}: ➕ Added '{best_candidate}' → mean CV={best_score:.4f} (+{delta:.4f})")
+                print(f" ✅ Accepted feature '{best_candidate}'. New best robust score: {best_score:.4f}")
         else:
             if verbose:
-                print(f"\n⏹️  No improvement at step {iteration}. Stopping selection.")
+                print(" ⏹️ No meaningful improvement. Stopping.")
             break
 
         history.append((iteration, len(selected), best_score))
 
-    return selected, pd.DataFrame(history, columns=["iteration", "n_features", "cv_accuracy"])
+    total_time = time.time() - start_time
+    if verbose:
+        print(f"\nTotal time: {total_time:.2f} seconds")
+
+    return selected, pd.DataFrame(history, columns=["iteration", "n_features", "robust_cv_accuracy"])
 
 def simple_train(X,y): 
     pipe = build_pipe()
@@ -1241,17 +1530,76 @@ def simple_train(X,y):
     pipe.fit(X, y) 
     print("\nFinal model trained on all training data.") 
     return pipe
-def build_pipe(USE_PCA=False, POLY_ENABLED=False):
+
+# def build_pipe(USE_PCA=False, POLY_ENABLED=False):
+#     steps = []
+#     if POLY_ENABLED:
+#         steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
+#     steps.append(("scaler", StandardScaler()))
+#     if USE_PCA:
+#         steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
+#     steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=1234)))
+
+#     return Pipeline(steps)
+def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
+    """
+    Builds a logistic regression pipeline and runs grid search + stability checks.
+    Returns: the best_model (fitted) + best_params + stability report
+    """
+
+    # --- Pipeline construction ---
     steps = []
     if POLY_ENABLED:
         steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
+
     steps.append(("scaler", StandardScaler()))
+
     if USE_PCA:
         steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
-    steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=1234)))
 
-    return Pipeline(steps)
+    # Base estimator placeholder (solver chosen during grid search)
+    steps.append(("logreg", LogisticRegression(max_iter=4000, random_state=seed)))
+    pipe = Pipeline(steps)
 
+    # --- Parameter grid ---
+    param_grid = [
+        # L1 and L2 with liblinear
+        {
+            'logreg__solver': ['liblinear'],
+            'logreg__penalty': ['l1', 'l2'],
+            'logreg__C': [0.01, 0.1, 1, 3, 10, 30],
+        },
+
+        # L2 with lbfgs
+        {
+            'logreg__solver': ['lbfgs'],
+            'logreg__penalty': ['l2'],
+            'logreg__C': [0.01, 0.1, 1, 3, 10, 30, 100],
+        },
+
+        # ElasticNet with saga
+        {
+            'logreg__solver': ['saga'],
+            'logreg__penalty': ['elasticnet'],
+            'logreg__l1_ratio': [0.1, 0.5, 0.9],
+            'logreg__C': [0.01, 0.1, 1, 3, 10],
+        }
+    ]
+
+    # --- Grid search with stratified 5-fold CV ---
+    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+
+    grid_search = GridSearchCV(
+        estimator=pipe,
+        param_grid=param_grid,
+        scoring="accuracy",
+        cv=kfold,
+        n_jobs=-1,
+        verbose=1,
+        refit=True
+    )
+
+    return grid_search  # not fitted yet — caller will call `fit(X, y)`
 def predict_and_submit(test_df, features, pipe):
     # Make predictions on the real test data
     X_test = test_df[features]
