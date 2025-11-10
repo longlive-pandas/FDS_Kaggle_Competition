@@ -387,6 +387,9 @@ print(f"extracted_features_and_weights under linearity assumption: {extracted_fe
 #     f.write(extracted_features_and_weights.to_string())
 extracted_features_and_weights.to_csv("extracted_features_and_weights.csv", index=False)
 #final_pipe = simple_train(X_selected,y)#creates and fits pipe
+import json
+with open("features_list_model83.33.json", "w") as f:
+    json.dump(selected, f)
 # Tune threshold on the training data
 best_threshold = tune_threshold(final_pipe, X_selected, y)
 predict_and_submit(test_df, features, final_pipe, threshold=best_threshold)
