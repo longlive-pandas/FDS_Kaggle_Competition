@@ -125,7 +125,7 @@ def compute_mean_stab_moves(timeline, pokemon_dict):
         "diff_mean_stab": p1_mean_stab - p2_mean_stab
     }
 
-def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart):
+def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test=False, battle_id=''):
     if not timeline:
         return {
             "p1_type_advantage": 1.0,
@@ -135,7 +135,8 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
 
     p1_advantages = []
     p2_advantages = []
-
+    debug_dict_p1 = {}
+    debug_dict_p2 = {}
     for turn in timeline:
         p1_name = turn.get("p1_pokemon_state", {}).get("name")
         p2_name = turn.get("p2_pokemon_state", {}).get("name")
@@ -149,12 +150,14 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
 
         if not p1_types or not p2_types:
             continue
-
+        debug_dict_p1[p1_name.lower()] = p1_types
+        debug_dict_p2[p2_name.lower()] = p2_types
         # --- P1 attacking P2 ---
         p1_mult = [
             type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
             for atk_type in p1_types for def_type in p2_types
         ]
+        #print("p1_mult:",p1_mult)
         p1_adv = np.mean(p1_mult) if p1_mult else 1.0
 
         # --- P2 attacking P1 ---
@@ -162,6 +165,7 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
             type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
             for atk_type in p2_types for def_type in p1_types
         ]
+        #print("p2_mult:",p2_mult)
         p2_adv = np.mean(p2_mult) if p2_mult else 1.0
 
         p1_advantages.append(p1_adv)
@@ -175,9 +179,12 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
         }
 
     # Compute averages over all turns
-    p1_avg = np.mean(p1_advantages)
-    p2_avg = np.mean(p2_advantages)
-
+    p1_avg = np.max(p1_advantages)
+    p2_avg = np.max(p2_advantages)
+    # if is_test and battle_id == 109:
+    #     print(f"first team:{debug_dict_p1}, second team:{debug_dict_p2}")
+    #     #,p1_avg,p2_avg,p1_avg - p2_avg
+    #     exit()
     return {
         "p1_type_advantage": p1_avg,
         "p2_type_advantage": p2_avg,
@@ -315,6 +322,9 @@ def compute_team_weakness(team, type_chart):
     return weakness_score
 
 #83.66% (+/- 0.52%) => 83.89% (+/- 0.58%)
+"""
+battle duration before first faint happens
+"""
 def battle_duration(battle):
     return len([t for t in battle['battle_timeline'] if t['p1_pokemon_state']['hp_pct'] > 0 and
                                                      t['p2_pokemon_state']['hp_pct'] > 0])
@@ -1067,7 +1077,11 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1-nr_pokemon_sconfitti_p2
             #DOVREBBERO ESSERE BOMBA VITA DELLE DUE SQUADRE DOPO I 30 TURNI
             features['p1_pct_final_hp'] = np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
-            # if is_test and battle_id == 5:
+            # if is_test and battle_id == 109:
+            #     print(p1_hp_final)
+            #     print("len ks: ",len(p1_hp_final.keys()))
+            #     print("6-len ks: ",6-len(p1_hp_final.keys()))
+            #     print("res: ",np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys())))
             #     print("debug: ",np.sum(list(p2_hp_final.values())),6-len(p2_hp_final.keys()),
             #           np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys())))
             #     exit()
@@ -1163,7 +1177,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             #CHECK 84.38% (+/- 1.11%) =>  84.40% (+/- 1.12%)
             features['diff_mean_stab'] = res["diff_mean_stab"]
 
-            result = compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
+            result = compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test, battle_id)
             #CHECK 84.40% (+/- 1.12%) =>  84.35% (+/- 1.01%)
             features['p1_type_advantage'] = result['p1_type_advantage']
             #CHECK 84.35% (+/- 1.01%) =>  84.47% (+/- 1.01%)
@@ -1190,8 +1204,8 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         features.update(calculate_interaction_features(features))
         # We also need the ID and the target variable (if it exists)
         
-        # if is_test and battle_id == 5:
-        #     with open("battle_5_features.json", "w", encoding="utf-8") as f:
+        # if is_test and battle_id == 109:
+        #     with open(f"test_battle_{battle_id}_features.json", "w", encoding="utf-8") as f:
         #         json.dump(features, f, ensure_ascii=False, indent=4, default=default)
         #     exit()
         features['battle_id'] = battle_id
@@ -1550,25 +1564,6 @@ def simple_train(X,y):
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import accuracy_score
 import numpy as np
-
-def tune_threshold(model, X, y):
-    # Predict probabilities with CV
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-    # cross_val_predict uses the model properly inside folds
-    probs = cross_val_predict(model, X, y, cv=skf, method='predict_proba')[:, 1]
-
-    thresholds = np.linspace(0.3, 0.7, 401)  # from 0.30 to 0.70 in steps of 0.001
-    accuracies = [accuracy_score(y, probs > t) for t in thresholds]
-
-    best_idx = np.argmax(accuracies)
-    best_threshold = thresholds[best_idx]
-    best_acc = accuracies[best_idx]
-
-    print(f"Best threshold: {best_threshold:.3f}")
-    print(f"Best CV accuracy: {best_acc:.4f}")
-
-    return best_threshold
 
 """
 10/11/2025 9.16

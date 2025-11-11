@@ -391,8 +391,7 @@ import json
 with open("features_list_model83.33.json", "w") as f:
     json.dump(selected, f)
 # Tune threshold on the training data
-best_threshold = tune_threshold(final_pipe, X_selected, y)
-predict_and_submit(test_df, features, final_pipe, threshold=best_threshold)
+predict_and_submit(test_df, features, final_pipe)
 
 
 
