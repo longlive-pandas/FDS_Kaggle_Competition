@@ -7,7 +7,6 @@ from start_utils import (
     greedy_feature_selection_dynamicC,
     #random_bucket_feature_search, 
     random_bucket_feature_search_robust,
-    tune_threshold,
     extract_features_by_importance,
     predict_and_submit)
 from sklearn.linear_model import LogisticRegression

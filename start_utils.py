@@ -147,25 +147,42 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart,
         # Get types from dictionary
         p1_types = pokemon_dict.get(p1_name.lower(), [])
         p2_types = pokemon_dict.get(p2_name.lower(), [])
-
+        #print(len(p1_types),len(p2_types))
         if not p1_types or not p2_types:
             continue
         debug_dict_p1[p1_name.lower()] = p1_types
         debug_dict_p2[p2_name.lower()] = p2_types
         # --- P1 attacking P2 ---
-        p1_mult = [
-            type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
-            for atk_type in p1_types for def_type in p2_types
-        ]
-        #print("p1_mult:",p1_mult)
+        # p1_mult = [
+        #     type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
+        #     for atk_type in p1_types for def_type in p2_types
+        # ]
+        # #print("p1_mult:",p1_mult)
+        # p1_adv = np.mean(p1_mult) if p1_mult else 1.0
+        p1_mult = []
+        for atk_type in p1_types:
+            mult = 1.0
+            for def_type in p2_types:
+                mult *= type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
+            p1_mult.append(mult)
+        #turn summary
         p1_adv = np.mean(p1_mult) if p1_mult else 1.0
 
         # --- P2 attacking P1 ---
-        p2_mult = [
-            type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
-            for atk_type in p2_types for def_type in p1_types
-        ]
-        #print("p2_mult:",p2_mult)
+        # p2_mult = [
+        #     type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
+        #     for atk_type in p2_types for def_type in p1_types
+        # ]
+        # #print("p2_mult:",p2_mult)
+        # p2_adv = np.mean(p2_mult) if p2_mult else 1.0
+        # --- P2 attacking P1 ---
+        p2_mult = []
+        for atk_type in p2_types:
+            mult = 1.0
+            for def_type in p1_types:
+                mult *= type_chart.get(atk_type.title(), {}).get(def_type.title(), 1.0)
+            p2_mult.append(mult)
+        #turn summary
         p2_adv = np.mean(p2_mult) if p2_mult else 1.0
 
         p1_advantages.append(p1_adv)
@@ -178,9 +195,9 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart,
             "diff_type_advantage": 0.0
         }
 
-    # Compute averages over all turns
-    p1_avg = np.max(p1_advantages)
-    p2_avg = np.max(p2_advantages)
+    #timeline summary
+    p1_avg = np.mean(p1_advantages)
+    p2_avg = np.mean(p2_advantages)
     # if is_test and battle_id == 109:
     #     print(f"first team:{debug_dict_p1}, second team:{debug_dict_p2}")
     #     #,p1_avg,p2_avg,p1_avg - p2_avg
@@ -1610,52 +1627,12 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     # Base estimator placeholder (solver chosen during grid search)
     steps.append(("logreg", LogisticRegression(max_iter=4000, random_state=seed)))
     pipe = Pipeline(steps)
-
-    # --- Parameter grid ---
-    # param_grid = [
-    #     # L1 and L2 with liblinear
-    #     {
-    #         'logreg__solver': ['liblinear'],
-    #         'logreg__penalty': ['l1', 'l2'],
-    #         'logreg__C': [0.01, 0.1, 1, 3
-    #                       #, 10, 30
-    #                       ],
-    #     },
-
-    #     # L2 with lbfgs
-    #     {
-    #         'logreg__solver': ['lbfgs'],
-    #         'logreg__penalty': ['l2'],
-    #         'logreg__C': [0.01, 0.1, 1
-    #                       #, 3, 10, 30, 100
-    #                       ],
-    #     },
-
-    #     # ElasticNet with saga
-    #     {
-    #         'logreg__solver': ['saga'],
-    #         'logreg__penalty': ['elasticnet'],
-    #         'logreg__l1_ratio': [0.1, 0.5, 0.9],
-    #         'logreg__C': [0.01, 0.1, 1
-    #                       #, 3, 10
-    #                       ],
-    #     }
-    # ]
-
-    # param_grid = {
-    #     'C': [0.01, 0.1, 1, 10],
-    #     'penalty': ['l1', 'l2'],
-    #     'solver': ['liblinear', 'lbfgs']
-    # }
     param_grid = [
-        # L1 and L2 with liblinear
         {
             'logreg__solver': ['liblinear'],
             'logreg__penalty': ['l1', 'l2'],
             'logreg__C': [0.01, 0.1, 1, 10],
         },
-
-        # L2 with lbfgs
         {
             'logreg__solver': ['lbfgs'],
             'logreg__penalty': ['l2'],
@@ -1677,7 +1654,7 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     grid_search = GridSearchCV(
         estimator=pipe,
         param_grid=param_grid,
-        scoring='roc_auc',#roc_auc
+        scoring='accuracy',#roc_auc#accuracy
         n_jobs=4,        # use 4 cores in parallel
         cv=kfold,            # 5-fold cross-validation, more on this later
         refit=True,      # retrain the best model on the full training set
@@ -1685,15 +1662,11 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     )
 
     return grid_search  # not fitted yet — caller will call `fit(X, y)`
-def predict_and_submit(test_df, features, pipe, threshold=0.5):
+def predict_and_submit(test_df, features, pipe):
     # Make predictions on the real test data
     X_test = test_df[features]
     print("Generating predictions on the test set...")
-    # Predict probabilities for Player 1 win
-    test_probs = pipe.predict_proba(X_test)[:, 1]
-
-    # Apply the optimized threshold
-    test_predictions = (test_probs > threshold).astype(int)
+    test_predictions = pipe.predict(X_test)
 
     # Create the submission DataFrame
     submission_df = pd.DataFrame({
