@@ -1366,10 +1366,10 @@ def read_test_data(test_file_path):
             test_data.append(json.loads(line))
     return test_data
 
-def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
+def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234, n_components=300):
     print("train_regularization!!")
     # Build grid search pipeline
-    grid_search = build_pipe(USE_PCA=USE_PCA, POLY_ENABLED=POLY_ENABLED, seed=seed)
+    grid_search = build_pipe(USE_PCA=USE_PCA, POLY_ENABLED=POLY_ENABLED, seed=seed, n_components=n_components)
     # Fit grid search
     grid_search.fit(X, y)
 
@@ -1657,13 +1657,13 @@ from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import accuracy_score
 import numpy as np
 
-def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
+def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234, n_components=300):
     """
     Builds a logistic regression pipeline and runs grid search + stability checks.
     Returns: the best_model (fitted) + best_params + stability report
     """
 
-    # --- Pipeline construction ---
+    #Pipeline
     steps = []
     if POLY_ENABLED:
         steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
@@ -1671,9 +1671,9 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     steps.append(("scaler", StandardScaler()))
 
     if USE_PCA:
-        steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
+        steps.append(("pca", PCA(n_components=n_components)))
 
-    # Base estimator placeholder (solver chosen during grid search)
+    #estimator
     steps.append(("logreg", LogisticRegression(max_iter=4000, random_state=seed)))
     pipe = Pipeline(steps)
     param_grid = [
@@ -1689,35 +1689,8 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
             , 10
             ],
         },
-         
-        # ,
-        # {
-        #     'logreg__solver': ['lbfgs'],
-        #     'logreg__penalty': ['l2'],
-        #     'logreg__C': [0.01, 0.1, 1, 10],
-        # },
     ]
-    # param_grid = [
-    # {
-    #     'logreg__solver': ['lbfgs'],  # or ['lbfgs', 'newton-cg', 'sag', 'saga']
-    #     'logreg__penalty': [None],
-    #     'logreg__max_iter': [5000],  # safer: give options for convergence
-    # }
-    # ]
-
-    # --- Grid search with stratified 5-fold CV ---
-    #StratifiedKFold
     kfold = KFold(n_splits=5, shuffle=True, random_state=seed)
-
-    # grid_search = GridSearchCV(
-    #     estimator=pipe,
-    #     param_grid=param_grid,
-    #     scoring="accuracy",
-    #     cv=kfold,
-    #     n_jobs=-1,
-    #     verbose=1,
-    #     refit=True
-    # )
     grid_search = GridSearchCV(
         estimator=pipe,
         param_grid=param_grid,
@@ -1727,8 +1700,7 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
         refit=True,      # retrain the best model on the full training set
         return_train_score=True
     )
-
-    return grid_search  # not fitted yet — caller will call `fit(X, y)`
+    return grid_search 
 def predict_and_submit(test_df, features, pipe):
     # Make predictions on the real test data
     X_test = test_df[features]
