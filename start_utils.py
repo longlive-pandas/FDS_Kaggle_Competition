@@ -776,6 +776,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
                 if name not in pokemon_dict:
                     pokemon_dict[name] = set()
                 pokemon_dict[name].update(types)
+    
     for battle in tqdm(data, desc="Extracting features"):
         battle_id = battle.get("battle_id")#debugging purposes
         features = {}
@@ -939,6 +940,45 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['p1_mean_def'] = p1_mean_def
             features['p1_mean_sp'] = p1_mean_spd
 
+            p1_max_hp = np.max([p.get('base_hp', 0) for p in p1_team])
+            p1_max_spe = np.max([p.get('base_spe', 0) for p in p1_team])
+            p1_max_atk = np.max([p.get('base_atk', 1) for p in p1_team])
+            p1_max_def = np.max([p.get('base_def', 0) for p in p1_team])
+            p1_max_spd = np.max([p.get('base_spd', 0) for p in p1_team])
+
+            features['p1_max_hp'] = p1_max_hp
+            #restyle RIMOSSO 83.89% (+/- 0.55%) => 83.98% (+/- 0.47%)
+            features['p1_max_spe'] = p1_max_spe
+            features['p1_max_atk'] = p1_max_atk#83.88% (+/- 0.54%)
+            features['p1_max_def'] = p1_max_def
+            features['p1_max_spd'] = p1_max_spd
+            
+            p1_min_hp = np.min([p.get('base_hp', 0) for p in p1_team])
+            p1_min_spe = np.min([p.get('base_spe', 0) for p in p1_team])
+            p1_min_atk = np.min([p.get('base_atk', 1) for p in p1_team])
+            p1_min_def = np.min([p.get('base_def', 0) for p in p1_team])
+            p1_min_spd = np.min([p.get('base_spd', 0) for p in p1_team])
+
+            features['p1_min_hp'] = p1_min_hp
+            #restyle RIMOSSO 83.89% (+/- 0.55%) => 83.98% (+/- 0.47%)
+            features['p1_min_spe'] = p1_min_spe
+            features['p1_min_atk'] = p1_min_atk#83.88% (+/- 0.54%)
+            features['p1_min_def'] = p1_min_def
+            features['p1_min_spd'] = p1_min_spd
+            
+            p1_std_hp = np.std([p.get('base_hp', 0) for p in p1_team])
+            p1_std_spe = np.std([p.get('base_spe', 0) for p in p1_team])
+            p1_std_atk = np.std([p.get('base_atk', 1) for p in p1_team])
+            p1_std_def = np.std([p.get('base_def', 0) for p in p1_team])
+            p1_std_spd = np.std([p.get('base_spd', 0) for p in p1_team])
+
+            features['p1_std_hp'] = p1_std_hp
+            #restyle RIMOSSO 83.89% (+/- 0.55%) => 83.98% (+/- 0.47%)
+            features['p1_std_spe'] = p1_std_spe
+            features['p1_std_atk'] = p1_std_atk#83.88% (+/- 0.54%)
+            features['p1_std_def'] = p1_std_def
+            features['p1_std_spd'] = p1_std_spd
+            
             #PER UN CONFRONTO EQUO UTILIZZIAMO SOLO DATI DEL LEADER ANCHE NELLA SQUADRA 1 PER LE DIFFERENZE
             p1_lead_hp =  p1_team[0].get('base_hp', 0)
             p1_lead_spe = p1_team[0].get('base_spe', 0)
@@ -1001,11 +1041,40 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
                 if isinstance(move2, dict) and move2.get("priority") is not None:
                     p2_priorities.append(move2["priority"])
 
+            # for i,p in enumerate(p1_priorities):
+            #     features[f"p1_prio_{i}"] = p
+            # for i,p in enumerate(p2_priorities):
+            #     features[f"p2_prio_{i}"] = p
             #priorità media per squadra
             p1_avg_move_priority = np.mean(p1_priorities) if p1_priorities else 0.0
             p2_avg_move_priority = np.mean(p2_priorities) if p2_priorities else 0.0
 
             #vantaggio relativo
+            features["p1_avg_move_priority"] = p1_avg_move_priority
+            features["p2_avg_move_priority"] = p2_avg_move_priority
+            
+            #priorità media per squadra
+            # p1_max_move_priority = np.max(p1_priorities) if p1_priorities else 0.0
+            # p2_max_move_priority = np.max(p2_priorities) if p2_priorities else 0.0
+
+            # #vantaggio relativo
+            # features["p1_max_move_priority"] = p1_max_move_priority
+            # features["p2_max_move_priority"] = p2_max_move_priority
+            
+            # p1_min_move_priority = np.min(p1_priorities) if p1_priorities else 0.0
+            # p2_min_move_priority = np.min(p2_priorities) if p2_priorities else 0.0
+
+            # #vantaggio relativo
+            # features["p1_min_move_priority"] = p1_min_move_priority
+            # features["p2_min_move_priority"] = p2_min_move_priority
+            
+            p1_std_move_priority = np.std(p1_priorities) if p1_priorities else 0.0
+            p2_std_move_priority = np.std(p2_priorities) if p2_priorities else 0.0
+
+            #vantaggio relativo
+            features["p1_std_move_priority"] = p1_std_move_priority
+            features["p2_std_move_priority"] = p2_std_move_priority
+            
             features["priority_diff"] = p1_avg_move_priority - p2_avg_move_priority
 
             #frazione dei turni in cui p1 ha più priorità
@@ -1061,18 +1130,32 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
                 if diffs:
                     features[f"mean_{stat}_diff_timeline"] = np.mean(diffs)#83.74=>83.87
                     features[f"std_{stat}_diff_timeline"] = np.std(diffs)#83.78=>83.87
+                    
+                    features[f"min_{stat}_diff_timeline"] = np.min(diffs)#83.74=>83.87
+                    features[f"max_{stat}_diff_timeline"] = np.max(diffs)#83.74=>83.87
+                    # for kk,vv in stat_diffs.items():
+                    #     features[f"{stat}_{kk}_diff_timeline"] = vv#83.74=>83.87
                 else:
                     features[f"mean_{stat}_diff_timeline"] = 0.0
                     features[f"std_{stat}_diff_timeline"] = 0.0
+                    
+                    features[f"min_{stat}_diff_timeline"] = 0.0
+                    features[f"max_{stat}_diff_timeline"] = 0.0
+                    # for kk,vv in stat_diffs.items():
+                    #     features[f"{stat}_{kk}_diff_timeline"] = 0.0
             #SALUTE
             p1_hp = [t['p1_pokemon_state']['hp_pct'] for t in timeline if t.get('p1_pokemon_state')]
             p2_hp = [t['p2_pokemon_state']['hp_pct'] for t in timeline if t.get('p2_pokemon_state')]
             #vantaggio medio in salute (media della differenza tra la salute dei pokemon del primo giocatore e quella dei pokemon del secondo giocatore)
             features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))
-
+            features['hp_diff_max'] = np.max(np.array(p1_hp) - np.array(p2_hp))
+            features['hp_diff_min'] = np.min(np.array(p1_hp) - np.array(p2_hp))
+            features['hp_diff_std'] = np.std(np.array(p1_hp) - np.array(p2_hp))
             #percentuale di tempo in vantaggio (ovvero media dei booleani che indicano il vantaggio => proporzione del vantaggio)
             features['p1_hp_advantage_mean'] = np.mean(np.array(p1_hp) > np.array(p2_hp))#GRAN BELLA OPZIONE DI CLASSIFICAZIONE POSSIBILE APPLICAZIONE DI EFFETTI DI ETEROGENEITA
-
+            features['p1_hp_advantage_max'] = np.max(np.array(p1_hp) > np.array(p2_hp))
+            features['p1_hp_advantage_min'] = np.min(np.array(p1_hp) > np.array(p2_hp))
+            features['p1_hp_advantage_std'] = np.std(np.array(p1_hp) > np.array(p2_hp))
             #SUM OF FINAL HP PERCENTAGE OF EACH PLAYER
             p1_hp_final ={}
             p2_hp_final ={}
@@ -1092,6 +1175,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['nr_pokemon_sconfitti_p2'] = nr_pokemon_sconfitti_p2
             #CHECK 84.31% (+/- 1.09%) => 84.35% (+/- 1.07%)
             features['nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1-nr_pokemon_sconfitti_p2
+            #features['dummy_new_nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1>nr_pokemon_sconfitti_p2
             #DOVREBBERO ESSERE BOMBA VITA DELLE DUE SQUADRE DOPO I 30 TURNI
             features['p1_pct_final_hp'] = np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
             # if is_test and battle_id == 109:
@@ -1123,10 +1207,15 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             phases = 3 #early, mid, late game
             nr_turns = 30 #numero turni
             slice_idx = nr_turns // phases #slice index must be integer
-            #print("slice_idx: ",slice_idx, "len p1_hp: ",len(p1_hp))
             features['early_hp_mean_diff'] = np.mean(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
-            #83.94% (+/- 0.46%) => 83.98% (+/- 0.47%)
             features['late_hp_mean_diff'] = np.mean(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
+            
+            features['early_hp_min_diff'] = np.min(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
+            features['late_hp_min_diff'] = np.min(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
+            features['early_hp_max_diff'] = np.max(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
+            features['late_hp_max_diff'] = np.max(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
+            features['early_hp_std_diff'] = np.std(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
+            features['late_hp_std_diff'] = np.std(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
 
             hp_delta = np.array(p1_hp) - np.array(p2_hp)
             features['hp_delta_trend'] = np.polyfit(range(len(hp_delta)), hp_delta, 1)[0]
@@ -1149,6 +1238,19 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             p2_negative_status_mean = np.mean([s in negative_status for s in p2_status])
             #status advantage if p1 applied more status to p2 (differenza delle medie dei negativi)
             features['p1_bad_status_advantage'] = p2_negative_status_mean-p1_negative_status_mean
+            
+            p1_negative_status_min = np.min([s in negative_status for s in p1_status])
+            p2_negative_status_min = np.min([s in negative_status for s in p2_status])
+            features['p1_bad_status_advantage_min'] = int(p2_negative_status_min)-int(p1_negative_status_min)
+            
+            p1_negative_status_max = np.max([s in negative_status for s in p1_status])
+            p2_negative_status_max = np.max([s in negative_status for s in p2_status])
+            features['p1_bad_status_advantage_max'] = int(p2_negative_status_max)-int(p1_negative_status_max)
+            
+            p1_negative_status_std = np.std([s in negative_status for s in p1_status])
+            p2_negative_status_std = np.std([s in negative_status for s in p2_status])
+            features['p1_bad_status_advantage_std'] = int(p2_negative_status_std)-int(p1_negative_status_std)
+            
             #p1_bad_status_advantage.append(features['p1_bad_status_advantage'])
             #how many times status changed?
             # we have to check that first array shifted by 1 is
@@ -1210,12 +1312,15 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             MEDIUM_SPEED_THRESHOLD = 90 #medium-speed pokemon
             HIGH_SPEED_THRESHOLD = 100 #fast pokemon
             speeds = np.array([p.get('base_spe', 0) for p in p1_team])
-            #restyle RIMOSSO 83.98% (+/- 0.47%) => 84.02% (+/- 0.50%)
             features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
-            #restyle RIMOSSO 84.02% (+/- 0.50%) => 84.03% (+/- 0.57%)
             features['p1_avg_high_speed_stat_battaglia'] = np.mean(np.array(speeds) > HIGH_SPEED_THRESHOLD)
 
-
+            features['p1_max_speed_stat_battaglia'] = np.max(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
+            features['p1_max_high_speed_stat_battaglia'] = np.max(np.array(speeds) > HIGH_SPEED_THRESHOLD)
+            features['p1_min_speed_stat_battaglia'] = np.min(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
+            features['p1_min_high_speed_stat_battaglia'] = np.min(np.array(speeds) > HIGH_SPEED_THRESHOLD)
+            features['p1_std_speed_stat_battaglia'] = np.std(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
+            features['p1_std_high_speed_stat_battaglia'] = np.std(np.array(speeds) > HIGH_SPEED_THRESHOLD)
         ##interaction features
         #CHECK 84.45% (+/- 1.00%) => 84.44% (+/- 0.99%)
         features.update(calculate_interaction_features(features))
@@ -1225,6 +1330,12 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         #     with open(f"test_battle_{battle_id}_features.json", "w", encoding="utf-8") as f:
         #         json.dump(features, f, ensure_ascii=False, indent=4, default=default)
         #     exit()
+        #prova robustezza anche con ciclo
+        # for i in range(0,100):
+        #     test_rdn = np.random.rand()
+        #     features[f"rnd_{i}"] = test_rdn
+
+
         features['battle_id'] = battle_id
         if 'player_won' in battle:
             features['player_won'] = int(battle['player_won'])
@@ -1256,10 +1367,9 @@ def read_test_data(test_file_path):
     return test_data
 
 def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
+    print("train_regularization!!")
     # Build grid search pipeline
-    print("build pipe")
     grid_search = build_pipe(USE_PCA=USE_PCA, POLY_ENABLED=POLY_ENABLED, seed=seed)
-    print("pipe built")
     # Fit grid search
     grid_search.fit(X, y)
 
@@ -1268,45 +1378,10 @@ def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
     mean_score = grid_search.best_score_
     std_score = grid_search.cv_results_['std_test_score'][grid_search.best_index_]
     print(f"Best CV mean: {mean_score:.4f} ± {std_score:.4f}")
-
-    """
-    49 features => 64 features
-    Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'lbfgs'}
-    Best CV score: 0.8450
-
-    after stratified
-
-    Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'lbfgs'}
-    Best CV score: 0.8428
-    """
+    with open('train_regularization.txt','a') as f:
+        f.write(f"{mean_score:.4f} ± {std_score:.4f} train_regularization {X.shape} \n")
     # --- Refit on all data automatically (refit=True) ---
     best_model = grid_search.best_estimator_
-    """
-    10/11/2025 9.36
-
-    Best params: {'logreg__C': 10, 'logreg__penalty': 'l1', 'logreg__solver': 'liblinear'}
-    Best CV mean: 0.9139 ± 0.0062
-    Seed 1039284721: 0.8422 ± 0.0090
-    Seed 398172634: 0.8431 ± 0.0069
-    Seed 2750193806: 0.8431 ± 0.0079
-    Seed 198234176: 0.8418 ± 0.0017
-    Seed 4129837512: 0.8432 ± 0.0071
-    Seed 1298374650: 0.8434 ± 0.0087
-    Seed 3029487619: 0.8434 ± 0.0079
-    Seed 718236451: 0.8449 ± 0.0026
-    Seed 2543197682: 0.8430 ± 0.0093
-    Seed 1765432987: 0.8423 ± 0.0066
-    Seed 389124765: 0.8437 ± 0.0063
-    Seed 612984372: 0.8417 ± 0.0057
-    Seed 2983716540: 0.8430 ± 0.0059
-    Seed 830174562: 0.8430 ± 0.0068
-    Seed 1229837465: 0.8439 ± 0.0067
-    Seed 4198372651: 0.8441 ± 0.0059
-    Seed 2378164529: 0.8423 ± 0.0043
-    Seed 3487612098: 0.8430 ± 0.0064
-    Seed 954613287: 0.8428 ± 0.0049
-    Seed 1864293754: 0.8424 ± 0.0045
-    """
     return best_model
 from sklearn.model_selection import cross_val_score, KFold
 import numpy as np
@@ -1582,32 +1657,6 @@ from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import accuracy_score
 import numpy as np
 
-"""
-10/11/2025 9.16
-Fitting 5 folds for each of 34 candidates, totalling 170 fits
-Best params: {'logreg__C': 30, 'logreg__penalty': 'l1', 'logreg__solver': 'liblinear'}
-Best CV mean: 0.8442 ± 0.0039
-Seed 1039284721: 0.8429 ± 0.0070
-Seed 398172634: 0.8436 ± 0.0075
-Seed 2750193806: 0.8435 ± 0.0092
-Seed 198234176: 0.8429 ± 0.0032
-Seed 4129837512: 0.8436 ± 0.0078
-Seed 1298374650: 0.8439 ± 0.0096
-Seed 3029487619: 0.8433 ± 0.0094
-Seed 718236451: 0.8456 ± 0.0028
-Seed 2543197682: 0.8435 ± 0.0099
-Seed 1765432987: 0.8443 ± 0.0093
-Seed 389124765: 0.8440 ± 0.0077
-Seed 612984372: 0.8424 ± 0.0062
-Seed 2983716540: 0.8428 ± 0.0054
-Seed 830174562: 0.8430 ± 0.0071
-Seed 1229837465: 0.8445 ± 0.0061
-Seed 4198372651: 0.8442 ± 0.0057
-Seed 2378164529: 0.8433 ± 0.0040
-Seed 3487612098: 0.8442 ± 0.0069
-Seed 954613287: 0.8438 ± 0.0041
-Seed 1864293754: 0.8438 ± 0.0037
-"""
 def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     """
     Builds a logistic regression pipeline and runs grid search + stability checks.
@@ -1629,18 +1678,36 @@ def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     pipe = Pipeline(steps)
     param_grid = [
         {
-            'logreg__solver': ['liblinear'],
-            'logreg__penalty': ['l1', 'l2'],
-            'logreg__C': [0.01, 0.1, 1, 10],
+            'logreg__solver': [
+                'liblinear'
+                ],
+            'logreg__penalty': [
+                'l1'
+                ,'l2'
+                ]
+            ,'logreg__C': [0.01, 0.1, 1
+            , 10
+            ],
         },
-        {
-            'logreg__solver': ['lbfgs'],
-            'logreg__penalty': ['l2'],
-            'logreg__C': [0.01, 0.1, 1, 10],
-        },
+         
+        # ,
+        # {
+        #     'logreg__solver': ['lbfgs'],
+        #     'logreg__penalty': ['l2'],
+        #     'logreg__C': [0.01, 0.1, 1, 10],
+        # },
     ]
+    # param_grid = [
+    # {
+    #     'logreg__solver': ['lbfgs'],  # or ['lbfgs', 'newton-cg', 'sag', 'saga']
+    #     'logreg__penalty': [None],
+    #     'logreg__max_iter': [5000],  # safer: give options for convergence
+    # }
+    # ]
+
     # --- Grid search with stratified 5-fold CV ---
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    #StratifiedKFold
+    kfold = KFold(n_splits=5, shuffle=True, random_state=seed)
 
     # grid_search = GridSearchCV(
     #     estimator=pipe,

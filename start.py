@@ -381,7 +381,7 @@ print(f"selected shape={X_selected.shape}")
 final_pipe = train_regularization(X_selected,y)
 
 extracted_features_and_weights = extract_features_by_importance(final_pipe, selected)
-print(f"extracted_features_and_weights under linearity assumption: {extracted_features_and_weights}")
+print(f"{len(selected)} features - extracted_features_and_weights under linearity assumption: {extracted_features_and_weights}")
 # with open("extracted_features_and_weights.txt", "w") as f:
 #     f.write(extracted_features_and_weights.to_string())
 extracted_features_and_weights.to_csv("extracted_features_and_weights.csv", index=False)

@@ -20,7 +20,7 @@ Expected damage and type advantage features
 18. p1_type_advantage: Mean type effectiveness of P1 attacks against P2’s types across turns.
 19. p2_type_advantage: Mean type effectiveness of P2 attacks against P1’s types.
 20. diff_type_advantage: Difference in type advantage metrics (P1 minus P2).
-Team and lead stats (static)
+Team and lead statistics (static)
 21. p1_max_offensive_stat: Highest Attack or Special Attack among P1’s team.
 22. p1_max_speed_stat: Highest Speed stat among P1’s team.
 23. p1_mean_hp: Average base HP of P1’s team.
