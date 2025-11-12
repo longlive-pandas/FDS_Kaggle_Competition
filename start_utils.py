@@ -4,6 +4,7 @@ from tqdm.notebook import tqdm
 import numpy as np
 from scipy.stats import linregress
 import json
+from typing import List, Dict
 #train
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
@@ -42,6 +43,85 @@ type_chart = {
     "Steel":      {"Fire":0.5, "Water":0.5, "Electric":0.5, "Ice":2.0, "Rock":2.0, "Fairy":2.0, "Steel":0.5},
     "Fairy":      {"Fire":0.5, "Fighting":2.0, "Poison":0.5, "Dragon":2.0, "Dark":2.0, "Steel":0.5}
 }
+
+def build_pokedex(all_data: List[Dict]) -> Dict:
+    """
+    Scorre tutti i dati di battaglia (train + test) una volta per 
+    creare un dizionario "Pokédex" che mappa i nomi dei Pokémon 
+    alle loro statistiche base e tipi.
+    """
+    pokedex = {}
+    print("Costruzione del Pokédex dai dati di battaglia...")
+    
+    for battle in all_data:
+        # Estrai info dal team P1
+        if battle.get('p1_team_details'):
+            for pokemon in battle['p1_team_details']:
+                name = pokemon.get('name')
+                if name and name not in pokedex:
+                    pokedex[name] = {
+                        'base_hp': pokemon.get('base_hp', 0),
+                        'base_atk': pokemon.get('base_atk', 0),
+                        'base_def': pokemon.get('base_def', 0),
+                        'base_spa': pokemon.get('base_spa', 0),
+                        'base_spd': pokemon.get('base_spd', 0),
+                        'base_spe': pokemon.get('base_spe', 0),
+                        'types': pokemon.get('types', [])
+                    }
+        
+        # Estrai info dal lead P2
+        if battle.get('p2_lead_details'):
+            pokemon = battle['p2_lead_details']
+            name = pokemon.get('name')
+            if name and name not in pokedex:
+                 pokedex[name] = {
+                    'base_hp': pokemon.get('base_hp', 0),
+                    'base_atk': pokemon.get('base_atk', 0),
+                    'base_def': pokemon.get('base_def', 0),
+                    'base_spa': pokemon.get('base_spa', 0),
+                    'base_spd': pokemon.get('base_spd', 0),
+                    'base_spe': pokemon.get('base_spe', 0),
+                    'types': pokemon.get('types', [])
+                }
+                
+    print(f"Pokédex costruito! Trovati {len(pokedex)} Pokémon unici.")
+    return pokedex
+
+def calculate_damage_metrics(features, p1_damage_list, p2_damage_list):
+    """
+    Calcola le metriche di danno (medie e massime) basate
+    sulle liste di danni (perdita HP) calcolate dalla timeline.
+    Usa i nomi delle feature del Codice 2.
+    """
+    
+    # --- Calcolo P1 ---
+    if len(p1_damage_list) > 0:
+        p1_avg = np.mean(p1_damage_list)
+        p1_max = np.max(p1_damage_list)
+    else:
+        p1_avg = 0.0
+        p1_max = 0.0
+        
+    # --- Calcolo P2 ---
+    if len(p2_damage_list) > 0:
+        p2_avg = np.mean(p2_damage_list)
+        p2_max = np.max(p2_damage_list)
+    else:
+        p2_avg = 0.0
+        p2_max = 0.0
+
+    # --- Salva le feature (USANDO I NOMI DI CODICE 2) ---
+    features['p1_move_damage_mean'] = p1_avg  # <- Nome dal Codice 2
+    features['p2_move_damage_mean'] = p2_avg  # <- Nome dal Codice 2
+    features['diff_move_damage_mean'] = p1_avg - p2_avg # <- Nome da Codice 2
+    
+    # Aggiungiamo anche il max (è utile e non sembra "copiato")
+    features['p1_move_damage_max'] = p1_max
+    features['p2_move_damage_max'] = p2_max
+    features['diff_move_damage_max'] = p1_max - p2_max
+    
+    return features
+
 def extract_features_by_importance(final_pipe, features):
     logreg = final_pipe.named_steps["logreg"]
     weights = logreg.coef_[0]   # shape (n_features,)
@@ -753,7 +833,8 @@ def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, fl
         features['p1_status_move_rate'] = 0.0
         
     return features
-def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
+#def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
+def create_features(data: List[Dict], POKEDEX: Dict, is_test=False) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
     status_change_diff = []
@@ -970,6 +1051,21 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         #informazioni dinamiche della battaglia
         #Chi mantiene più HP medi e conduce più turni spesso vince anche se la battaglia non è ancora finita
         timeline = battle.get('battle_timeline', [])
+
+         # === 1. INIZIALIZZAZIONE CONTATORI DANNO ===
+        p1_damage_list = []
+        p2_damage_list = []
+        pokemon_hp_tracker = {} # Tracker HP per calcolo danni
+
+        # === NUOVA FEATURE: Inizializza il set per i nomi P2 ===
+        ##########################################################################################
+        p2_revealed_names = set()
+        
+        if p2_lead:
+            # Aggiungiamo il lead (se esiste) al nostro set
+            if p2_lead.get('name'):
+                p2_revealed_names.add(p2_lead.get('name'))
+
         if timeline:
             #boost+damage diff
             # --- Mean attack and defense boosts across timeline ---
@@ -1081,6 +1177,81 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
                     p1_hp_final[t['p1_pokemon_state']['name']]=t['p1_pokemon_state']['hp_pct']
                 if t.get('p2_pokemon_state'):
                     p2_hp_final[t['p2_pokemon_state']['name']]=t['p2_pokemon_state']['hp_pct']
+
+                    # --- (Logica di tracciamento danni) ---
+                p1_state = t.get('p1_pokemon_state', {})
+                p1_name = p1_state.get('name')
+                p1_key = f"p1_{p1_name}"
+                
+                p2_state = t.get('p2_pokemon_state', {})
+                p2_name = p2_state.get('name')
+                p2_key = f"p2_{p2_name}"
+                
+                p1_move = t.get('p1_move_details')
+                p2_move = t.get('p2_move_details')
+
+                # --- Track P1 Damage (P1 hits P2) ---
+                if p1_move and p1_name and p2_name and p1_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p2_key, 1.0) # Default 1.0 se non l'ha ancora visto
+                    new_hp = p2_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: 
+                        p1_damage_list.append(damage_dealt)
+
+                # --- Track P2 Damage (P2 hits P1) ---
+                if p2_move and p1_name and p2_name and p2_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p1_key, 1.0) # Default 1.0
+                    new_hp = p1_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: 
+                        p2_damage_list.append(damage_dealt)
+
+                # --- Aggiorna il tracker (alla fine del turno) ---
+                if p1_name:
+                    pokemon_hp_tracker[p1_key] = p1_state.get('hp_pct', 1.0)
+                if p2_name:
+                    pokemon_hp_tracker[p2_key] = p2_state.get('hp_pct', 1.0)
+            
+            # === NUOVE FEATURE: Statistiche Team P2 Rivelato ===
+            
+            # (p2_revealed_names viene già calcolato)
+            
+            p2_revealed_stats = {
+                'hp': [], 'spe': [], 'atk': [], 
+                'def': [], 'spa': [], 'spd': [], 
+                'types': []
+            }
+            
+            for name in p2_revealed_names:
+                if name in POKEDEX:
+                    poke_data = POKEDEX[name]
+                    p2_revealed_stats['hp'].append(poke_data.get('base_hp', 0))
+                    p2_revealed_stats['spe'].append(poke_data.get('base_spe', 0))
+                    p2_revealed_stats['atk'].append(poke_data.get('base_atk', 0))
+                    p2_revealed_stats['def'].append(poke_data.get('base_def', 0))
+                    p2_revealed_stats['spa'].append(poke_data.get('base_spa', 0))
+                    p2_revealed_stats['spd'].append(poke_data.get('base_spd', 0))
+                    p2_revealed_stats['types'].extend(poke_data.get('types', []))
+
+            # Calcola le medie (con nomi in stile Codice 2)
+            features['p2_revealed_mean_hp'] = np.mean(p2_revealed_stats['hp']) if p2_revealed_stats['hp'] else 0.0
+            features['p2_revealed_mean_spe'] = np.mean(p2_revealed_stats['spe']) if p2_revealed_stats['spe'] else 0.0
+            features['p2_revealed_mean_atk'] = np.mean(p2_revealed_stats['atk']) if p2_revealed_stats['atk'] else 0.0
+            features['p2_revealed_mean_def'] = np.mean(p2_revealed_stats['def']) if p2_revealed_stats['def'] else 0.0
+            features['p2_revealed_mean_spa'] = np.mean(p2_revealed_stats['spa']) if p2_revealed_stats['spa'] else 0.0
+            features['p2_revealed_mean_spd'] = np.mean(p2_revealed_stats['spd']) if p2_revealed_stats['spd'] else 0.0
+            
+            # Calcola la diversità dei tipi (con nomi in stile Codice 2)
+            all_types = [t for t in p2_revealed_stats['types'] if t != 'notype']
+            features['p2_revealed_type_diversity'] = len(set(all_types))
+
+            #chiamata nuova funzione calcolo danni
+            features = calculate_damage_metrics(features, p1_damage_list, p2_damage_list)
+
+            # === NUOVA FEATURE: Salva il conteggio ===
+            #########################################################################################
+            features['p2_n_pokemon_revealed'] = len(p2_revealed_names)
+
             #numero di pokemon usati dal giocatore nei primi 30 turni
             features['p1_n_pokemon_use'] =len(p1_hp_final.keys())
             features['p2_n_pokemon_use'] =len(p2_hp_final.keys())
@@ -1137,6 +1308,12 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['p1_hp_std'] = np.std(p1_hp)
             features['p2_hp_std'] = np.std(p2_hp)
             features['hp_delta_std'] = np.std(hp_delta)
+
+            # --- Efficiency & stability metrics (#10) ---
+            # 1️⃣ Damage per turn: how much advantage P1 gains in HP per turn
+            features["damage_per_turn"] = (
+                features["diff_move_damage_mean"] / max(1, features["battle_duration"])
+            )
 
             ##STATUS (default nostatus, gli altri sono considerati negativi - i boost sono positivi)
             p1_status = [t['p1_pokemon_state'].get('status', 'nostatus') for t in timeline if t.get('p1_pokemon_state')]
