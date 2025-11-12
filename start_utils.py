@@ -11,6 +11,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, GridSearchCV
 import os
+from typing import Dict, Any
+from sklearn.model_selection import StratifiedKFold, cross_val_score, KFold, cross_val_predict
+import random
+import time
+
 def default(o):
     if isinstance(o, (np.integer,)):
         return int(o)
@@ -448,7 +453,6 @@ def calculate_expected_damage_ratio_turn_1(battle: dict, type_chart: dict) -> fl
     
     return log_advantage
 
-from typing import Dict, List, Any
 
 def calculate_status_efficacy_features(battle: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -531,7 +535,7 @@ def calculate_status_efficacy_features(battle: Dict[str, Any]) -> Dict[str, floa
         
     return features
 
-from typing import Dict, List, Any
+
 
 def calculate_p2_status_control_features(battle: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -599,7 +603,7 @@ def calculate_p2_status_control_features(battle: Dict[str, Any]) -> Dict[str, fl
         features['p2_cumulative_major_status_turns_pct'] = 0.0
         
     return features
-from typing import Dict, Any
+
 
 def calculate_interaction_features(features: Dict[str, float]) -> Dict[str, float]:
     """
@@ -634,8 +638,7 @@ def calculate_interaction_features(features: Dict[str, float]) -> Dict[str, floa
     
     return features
 
-from typing import Dict, Any, List
-import numpy as np
+
 
 def calculate_dynamic_boost_features(battle: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -691,7 +694,6 @@ def calculate_dynamic_boost_features(battle: Dict[str, Any]) -> Dict[str, float]
     
     return features
 
-from typing import Dict, Any, List
 
 def calculate_team_coverage_features(battle: Dict[str, Any], type_chart: Dict) -> Dict[str, float]:
     """
@@ -1365,6 +1367,52 @@ def read_test_data(test_file_path):
         for line in f:
             test_data.append(json.loads(line))
     return test_data
+def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
+    """
+    Builds a logistic regression pipeline and runs grid search + stability checks.
+    Returns: the best_model (fitted) + best_params + stability report
+    """
+
+    # --- Pipeline construction ---
+    steps = []
+    if POLY_ENABLED:
+        steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
+
+    steps.append(("scaler", StandardScaler()))
+
+    if USE_PCA:
+        steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
+
+    # Base estimator placeholder (solver chosen during grid search)
+    steps.append(("logreg", LogisticRegression(max_iter=4000, random_state=seed)))
+    pipe = Pipeline(steps)
+    param_grid = [
+        {
+            'logreg__solver': [
+                'liblinear'
+                ],
+            'logreg__penalty': [
+                'l1'
+                ,'l2'
+                ]
+            ,'logreg__C': [0.01, 0.1, 1
+            , 10
+            ],
+        },
+    ]
+    #StratifiedKFold
+    kfold = KFold(n_splits=5, shuffle=True, random_state=seed)
+    grid_search = GridSearchCV(
+        estimator=pipe,
+        param_grid=param_grid,
+        scoring='accuracy',#roc_auc#accuracy
+        n_jobs=4,        # use 4 cores in parallel
+        cv=kfold,            # 5-fold cross-validation, more on this later
+        refit=True,      # retrain the best model on the full training set
+        return_train_score=True
+    )
+
+    return grid_search  # not fitted yet — caller will call `fit(X, y)`
 
 def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
     print("train_regularization!!")
@@ -1383,22 +1431,8 @@ def train_regularization(X, y, USE_PCA=False, POLY_ENABLED=False, seed=1234):
     # --- Refit on all data automatically (refit=True) ---
     best_model = grid_search.best_estimator_
     return best_model
-from sklearn.model_selection import cross_val_score, KFold
-import numpy as np
-import pandas as pd
 
-import random
-from sklearn.model_selection import cross_val_score, KFold
-import numpy as np
-import pandas as pd
 
-import random
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 def random_bucket_feature_search_robust(
     X, y,
@@ -1509,17 +1543,7 @@ def random_bucket_feature_search_robust(
         "bucket_scores": df
     }
 
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-import numpy as np
-import pandas as pd
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-import numpy as np
-import pandas as pd
-import time
 
 def greedy_feature_selection_dynamicC(
     X, y,
@@ -1643,92 +1667,7 @@ def simple_train(X,y):
     print("\nFinal model trained on all training data.") 
     return pipe
 
-# def build_pipe(USE_PCA=False, POLY_ENABLED=False):
-#     steps = []
-#     if POLY_ENABLED:
-#         steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
-#     steps.append(("scaler", StandardScaler()))
-#     if USE_PCA:
-#         steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
-#     steps.append(("logreg", LogisticRegression(max_iter=2000, random_state=1234)))
 
-#     return Pipeline(steps)
-from sklearn.model_selection import cross_val_predict
-from sklearn.metrics import accuracy_score
-import numpy as np
-
-def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
-    """
-    Builds a logistic regression pipeline and runs grid search + stability checks.
-    Returns: the best_model (fitted) + best_params + stability report
-    """
-
-    # --- Pipeline construction ---
-    steps = []
-    if POLY_ENABLED:
-        steps.append(("poly", PolynomialFeatures(degree=2, include_bias=False)))
-
-    steps.append(("scaler", StandardScaler()))
-
-    if USE_PCA:
-        steps.append(("pca", PCA(n_components=0.95, svd_solver="full")))
-
-    # Base estimator placeholder (solver chosen during grid search)
-    steps.append(("logreg", LogisticRegression(max_iter=4000, random_state=seed)))
-    pipe = Pipeline(steps)
-    param_grid = [
-        {
-            'logreg__solver': [
-                'liblinear'
-                ],
-            'logreg__penalty': [
-                'l1'
-                ,'l2'
-                ]
-            ,'logreg__C': [0.01, 0.1, 1
-            , 10
-            ],
-        },
-         
-        # ,
-        # {
-        #     'logreg__solver': ['lbfgs'],
-        #     'logreg__penalty': ['l2'],
-        #     'logreg__C': [0.01, 0.1, 1, 10],
-        # },
-    ]
-    # param_grid = [
-    # {
-    #     'logreg__solver': ['lbfgs'],  # or ['lbfgs', 'newton-cg', 'sag', 'saga']
-    #     'logreg__penalty': [None],
-    #     'logreg__max_iter': [5000],  # safer: give options for convergence
-    # }
-    # ]
-
-    # --- Grid search with stratified 5-fold CV ---
-    #StratifiedKFold
-    kfold = KFold(n_splits=5, shuffle=True, random_state=seed)
-
-    # grid_search = GridSearchCV(
-    #     estimator=pipe,
-    #     param_grid=param_grid,
-    #     scoring="accuracy",
-    #     cv=kfold,
-    #     n_jobs=-1,
-    #     verbose=1,
-    #     refit=True
-    # )
-    grid_search = GridSearchCV(
-        estimator=pipe,
-        param_grid=param_grid,
-        scoring='accuracy',#roc_auc#accuracy
-        n_jobs=4,        # use 4 cores in parallel
-        cv=kfold,            # 5-fold cross-validation, more on this later
-        refit=True,      # retrain the best model on the full training set
-        return_train_score=True
-    )
-
-    return grid_search  # not fitted yet — caller will call `fit(X, y)`
 def predict_and_submit(test_df, features, pipe):
     # Make predictions on the real test data
     X_test = test_df[features]
