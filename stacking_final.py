@@ -671,102 +671,84 @@ from sklearn.linear_model import LogisticRegression
 import numpy as np # Importa numpy per gli intervalli di parametri
 from xgboost import XGBClassifier
 
-#BASE
-BASE = True#False#True
-if BASE:
-    rf = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=6,  
-        random_state=1234,
-        n_jobs=-1
-    )
+from sklearn.ensemble import VotingClassifier, RandomForestClassifier, AdaBoostClassifier
 
-    gb = GradientBoostingClassifier(
-        n_estimators=200,      
-        learning_rate=0.03,
-        max_depth=3, 
-        random_state=1234
-    )
+""" rf = RandomForestClassifier(
+    n_estimators=500,
+    max_depth=6,
+    random_state=1234,
+    n_jobs=-1
+) """
+rf = RandomForestClassifier(
+    n_estimators=800,       # more trees -> more stability
+    max_depth=6,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    max_features='sqrt',   # improves generalization
+    bootstrap=True,
+    random_state=1234,
+    n_jobs=-1
+)
+""" 
+ada = AdaBoostClassifier(
+    n_estimators=300,
+    learning_rate=0.05,
+    random_state=1234
+) """
+from sklearn.tree import DecisionTreeClassifier
 
-    stacked_model = StackingClassifier(
-        estimators=[
-            ('rf', rf),         
-            ('gb', gb)          
-        ],
-        final_estimator=LogisticRegression(
-            max_iter=2000, 
-            C=0.05, 
-            random_state=1234
-        ), 
-        passthrough=False, 
-        n_jobs=-1
-    )
-else:
+ada = AdaBoostClassifier(
+    estimator=DecisionTreeClassifier(
+        max_depth=1,          
+    ),
+    n_estimators=500,         # stronger ensemble
+    learning_rate=0.5,        # typical powerful range (0.3–1.0)
+    random_state=1234
+)
+gb = GradientBoostingClassifier(
+    n_estimators=300,
+    learning_rate=0.05,
+    max_depth=3,
+    subsample=0.8,
+    random_state=1234
+)
+from sklearn.linear_model import LogisticRegression
 
-    rf = RandomForestClassifier(random_state=1234, n_jobs=-1)
-    gb = GradientBoostingClassifier(random_state=1234)
-    log_reg = LogisticRegression(random_state=1234, max_iter=2000)
+lr = LogisticRegression(
+    C=0.5,
+    max_iter=1000,
+    solver='liblinear'
+)
 
-   
+voting_model = VotingClassifier(
+    estimators=[
+        ('rf', rf),
+        ('ada', ada),
+        #('gb', gb),
+        ('lr', lr)
+    ],
+    voting='soft',   # usa le probabilità
+    n_jobs=-1
+)
+stacked_model = voting_model
 
-    stacked_model_base = StackingClassifier(
-        estimators=[('rf', rf), ('gb', gb)],
-        final_estimator=XGBClassifier(random_state=1234, n_estimators=100, learning_rate=0.05),
-        passthrough=True,
-        n_jobs=-1
-    )
+"""
+['diff_speed_first', 'diff_speed_timeline', 'diff_stat', 'sum_stat_lead_p1', 'sum_stat_lead_p2', 'diff_stat_lead', 'p1_hp_pct_sum', 'p2_hp_pct_sum', 'diff_hp_pct', 'p1_type_advantage', 'p2_type_advantage', 'diff_type_advantage', 'status_p1', 'status_p2', 'diff_status', 'p1_move_power_weighted', 'p1_number_attacks', 'p1_number_status', 'p2_move_power_weighted', 'p2_number_attacks', 'p2_number_status', 'diff_number_attack', 'diff_number_status', 'p1_sum_negative_priority', 'p2_sum_negative_priority', 'diff_negative_priority', 'boost_p1', 'boost_p2', 'diff_boost'],
+0.8302, 0.9048670400000001, 0.8222 ± 0.0131, 0.8924 ± 0.0099
 
-    param_grid = {
-        # --- Random Forest ---
-        'rf__n_estimators': [100, 300, 500],
-        'rf__max_depth': [None, 5, 10, 20],
-        'rf__min_samples_split': [2, 5, 10],
-        'rf__min_samples_leaf': [1, 2, 4],
-        
-        # --- Gradient Boosting ---
-        'gb__n_estimators': [100, 200, 300],
-        'gb__learning_rate': [0.01, 0.05, 0.1],
-        'gb__max_depth': [2, 3, 5],
-        'gb__subsample': [0.8, 1.0],
-        
-        # --- XGBoost (meta-model) ---
-        'final_estimator__n_estimators': [100, 200, 300],
-        'final_estimator__learning_rate': [0.01, 0.05, 0.1],
-        'final_estimator__max_depth': [3, 5, 7],
-        'final_estimator__subsample': [0.8, 1.0],
-        'final_estimator__colsample_bytree': [0.8, 1.0]
-    }
+3' overfit powerful model 29 features
+featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score
+['diff_type_advantage', 'p1_type_advantage', 'diff_status', 'diff_speed_first', 'diff_stat', 'p2_hp_pct_sum', 'diff_hp_pct', 'p1_number_attacks', 'p1_number_status', 'p2_sum_negative_priority', 'p1_move_power_weighted', 'boost_p1', 'boost_p2', 'diff_boost', 'sum_stat_lead_p1', 'sum_stat_lead_p2'],0.9121, 0.98396136, 0.8234 ± 0.0142, 0.8934 ± 0.0083
 
+4. reduced power model, 16 features
+featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score
+['diff_type_advantage', 'p1_type_advantage', 'diff_status', 'diff_speed_first', 'diff_stat', 'p2_hp_pct_sum', 'diff_hp_pct', 'p1_number_attacks', 'p1_number_status', 'p2_sum_negative_priority', 'p1_move_power_weighted', 'boost_p1', 'boost_p2', 'diff_boost', 'sum_stat_lead_p1', 'sum_stat_lead_p2'],0.828, 0.9022998000000001, 0.8224 ± 0.0136, 0.8939 ± 0.0087
 
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1234)
-
-    from sklearn.model_selection import RandomizedSearchCV
-
-    stacked_model = RandomizedSearchCV(
-        estimator=stacked_model_base,
-        param_distributions=param_grid,
-        n_iter=50,  #prova anche con 100?
-        cv=5,
-        scoring='roc_auc',
-        n_jobs=-1,
-        verbose=2,
-        random_state=1234
-    )
-
-import itertools
-
-def get_power_set_non_empty_as_list(array):
-  n = len(array)
-  combinations_iterators = (
-      itertools.combinations(array, k) for k in range(1, n + 1)
-  )
-  non_empty_subsets_tuples = itertools.chain.from_iterable(combinations_iterators)
-  non_empty_subsets_lists = [
-      list(subset_tuple) for subset_tuple in non_empty_subsets_tuples
-  ]
-  
-  return non_empty_subsets_lists
-
+5. reduced power model, 29 features
+featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score
+['diff_speed_first', 'diff_speed_timeline', 'diff_stat', 'sum_stat_lead_p1', 'sum_stat_lead_p2', 'diff_stat_lead', 'p1_hp_pct_sum', 'p2_hp_pct_sum', 'diff_hp_pct', 'p1_type_advantage', 'p2_type_advantage', 'diff_type_advantage', 'status_p1', 'status_p2', 'diff_status', 'p1_move_power_weighted', 'p1_number_attacks', 'p1_number_status', 'p2_move_power_weighted', 'p2_number_attacks', 'p2_number_status', 'diff_number_attack', 'diff_number_status', 'p1_sum_negative_priority', 'p2_sum_negative_priority', 'diff_negative_priority', 'boost_p1', 'boost_p2', 'diff_boost'],0.8322, 0.9070218, 0.8258 ± 0.0126, 0.8976 ± 0.0088
+It took 98.72840213775635 time to train voting.
+"""
 def final():
     
     final_features = [
@@ -779,9 +761,11 @@ def final():
                 'boost_p1', 'boost_p2', 'diff_boost',#14
                 'sum_stat_lead_p1', 'sum_stat_lead_p2',#16
             ]
-    selected = features
+    selected = features#(29)
 
     X_selected = X[selected]
+    import time
+    start = time.time()
     stacked_model.fit(X_selected, y)
     final_pipe = stacked_model
     #EVALUATE
@@ -794,6 +778,7 @@ def final():
     auc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring='roc_auc')
     print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
     print(f"{[f for f in selected]},{accuracy_score(y, y_train_pred)}, {roc_auc_score(y, y_train_proba)}, {acc.mean():.4f} ± {acc.std():.4f}, {auc.mean():.4f} ± {auc.std():.4f}")
-
+    end = time.time()
+    print(f"It took {end-start} time to train voting.")
     #predict_and_submit(test_df, selected, final_pipe)
 final()
