@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, GridSearchCV
+from typing import List, Dict 
 import os
 def default(o):
     if isinstance(o, (np.integer,)):
@@ -42,6 +43,42 @@ type_chart = {
     "Steel":      {"Fire":0.5, "Water":0.5, "Electric":0.5, "Ice":2.0, "Rock":2.0, "Fairy":2.0, "Steel":0.5},
     "Fairy":      {"Fire":0.5, "Fighting":2.0, "Poison":0.5, "Dragon":2.0, "Dark":2.0, "Steel":0.5}
 }
+
+
+def calculate_damage_metrics(features, p1_damage_list, p2_damage_list):
+    """
+    Calcola le metriche di danno (medie e massime) basate
+    sulle liste di danni (perdita HP) calcolate dalla timeline.
+    """
+    
+    # --- Calcolo P1 ---
+    if len(p1_damage_list) > 0:
+        p1_avg = np.mean(p1_damage_list)
+        p1_max = np.max(p1_damage_list)
+    else:
+        p1_avg = 0.0
+        p1_max = 0.0
+        
+    # --- Calcolo P2 ---
+    if len(p2_damage_list) > 0:
+        p2_avg = np.mean(p2_damage_list)
+        p2_max = np.max(p2_damage_list)
+    else:
+        p2_avg = 0.0
+        p2_max = 0.0
+
+    # --- Salva le feature (USANDO I NOMI DI CODICE 2) ---
+    features['p1_move_damage_mean'] = p1_avg  # <- Nome dal Codice 2
+    features['p2_move_damage_mean'] = p2_avg  # <- Nome dal Codice 2
+    features['diff_move_damage_mean'] = p1_avg - p2_avg # <- Nome da Codice 2
+    
+    # Aggiungiamo anche il max (è utile)
+    features['p1_move_damage_max'] = p1_max
+    features['p2_move_damage_max'] = p2_max
+    features['diff_move_damage_max'] = p1_max - p2_max
+    
+    return features
+
 def extract_features_by_importance(final_pipe, features):
     logreg = final_pipe.named_steps["logreg"]
     weights = logreg.coef_[0]   # shape (n_features,)
@@ -64,6 +101,52 @@ def hp_advantage_trend(battle):
     x = np.arange(len(hp_adv))
     slope, _, _, _, _ = linregress(x, hp_adv)
     return slope
+
+
+def build_pokedex(all_data: List[Dict]) -> Dict:
+    """
+    Scorre tutti i dati di battaglia (train + test) una volta per 
+    creare un dizionario "Pokédex" che mappa i nomi dei Pokémon 
+    alle loro statistiche base e tipi.
+    """
+    pokedex = {}
+    print("Costruzione del Pokédex dai dati di battaglia...")
+    
+    # Usiamo tqdm qui per mostrare il progresso
+    for battle in tqdm(all_data, desc="Building Pokedex"):
+        # Estrai info dal team P1 (fonte più affidabile)
+        if battle.get('p1_team_details'):
+            for pokemon in battle['p1_team_details']:
+                name = pokemon.get('name')
+                if name and name not in pokedex:
+                    pokedex[name] = {
+                        'base_hp': pokemon.get('base_hp', 0),
+                        'base_atk': pokemon.get('base_atk', 0),
+                        'base_def': pokemon.get('base_def', 0),
+                        'base_spa': pokemon.get('base_spa', 0),
+                        'base_spd': pokemon.get('base_spd', 0),
+                        'base_spe': pokemon.get('base_spe', 0),
+                        'types': pokemon.get('types', [])
+                    }
+        
+        # Estrai info dal lead P2 (per Pokémon non visti in P1)
+        if battle.get('p2_lead_details'):
+            pokemon = battle['p2_lead_details']
+            name = pokemon.get('name')
+            if name and name not in pokedex:
+                 pokedex[name] = {
+                    'base_hp': pokemon.get('base_hp', 0),
+                    'base_atk': pokemon.get('base_atk', 0),
+                    'base_def': pokemon.get('base_def', 0),
+                    'base_spa': pokemon.get('base_spa', 0),
+                    'base_spd': pokemon.get('base_spd', 0),
+                    'base_spe': pokemon.get('base_spe', 0),
+                    'types': pokemon.get('types', [])
+                }
+                
+    print(f"Pokédex costruito! Trovati {len(pokedex)} Pokémon unici.")
+    return pokedex
+
 def compute_mean_stab_moves(timeline, pokemon_dict):
     """
     Compute the mean number of STAB (Same Type Attack Bonus) moves used by P1 and P2
@@ -753,12 +836,13 @@ def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, fl
         features['p1_status_move_rate'] = 0.0
         
     return features
-def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
+def create_features(data: List[Dict], POKEDEX: Dict, is_test=False) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
     status_change_diff = []
     #restyle build dictionary pokemon => types
     pokemon_dict = {}
+
     for battle in data:
         p1_team = battle.get('p1_team_details', [])
         for p in p1_team:
@@ -795,73 +879,9 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         
         ###
         dynamic_boost_features = calculate_dynamic_boost_features(battle)
-        """
-        Mancano 1,2; 1,3
-        1,2,3 NO da 8394
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8428 ± 0.0041 (da 8394 a 8429)
-        It took 104.46463012695312 time
-
-        1
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.1, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8429 ± 0.0046 (da 8408 a 8430)
-        It took 79.87716317176819 time
-        """
-        #features['p1_net_boost_sum'] = dynamic_boost_features['p1_net_boost_sum']
-        """
-        1,2 NO
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8428 ± 0.0043 (da 8397 a 8426)
-        """
-        """
-        2,3 NO
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0048 (da 8416 a 8451)
-        It took 51.33575224876404 time
-        """
-
-        """
-        2 molto buono
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0042 (da 8419 a 8451)
-        It took 52.9518678188324 time
-        """
+    
         features['p1_max_offense_boost_diff'] = dynamic_boost_features['p1_max_offense_boost_diff']
-        """
-        3
-        Best CV mean: 0.8428 ± 0.0041 (da 8413 a 8444)
-        It took 284.0617139339447 time
-        """
-        
-        #features['p1_max_speed_boost_diff'] = dynamic_boost_features['p1_max_speed_boost_diff']
-        
 
-        ####
-        """
-        nessuno
-        Best CV mean: 0.8442 ± 0.0041 (da 8419 a 8451)
-
-        1,2
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8434)
-        """
-
-        """
-        1 CHOSEN (improved min, same max, decrease best)
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0042 (da 8420 a 8451)
-        """
-
-        """
-        2
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8435)
-        """
         # Integrate Team Coverage (Step 4)
         #print("calculating p1_team_super_effective_moves")
         p1_team_super_effective_moves = calculate_team_coverage_features(battle, type_chart)
@@ -948,7 +968,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
 
 
         # --- Player 2 Lead Features ---
-        p2_hp = p2_spe = p2_atk = p2_def = p2_spd = 0.0
+        p2_hp = p2_spe = p2_atk = p2_def = p2_spd = p2_spa = 0.0
         p2_lead = battle.get('p2_lead_details')
         if p2_lead:
             
@@ -958,6 +978,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             p2_atk = p2_lead.get('base_atk', 0)
             p2_def = p2_lead.get('base_def', 0)
             p2_spd = p2_lead.get('base_spd', 0)
+            p2_spa = p2_lead.get('base_spa', 0)
 
         # I ADD THE DIFFS/DELTAS
         features['diff_hp']  = p1_lead_hp  - p2_hp
@@ -967,6 +988,21 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         #CHECK 84.31% (+/- 1.09%) => 84.31% (+/- 1.09%)
         features['diff_spd'] =  p1_lead_spd - p2_spd#83.93% (+/- 0.53%) => 83.87% (+/- 0.57%)
         
+        features['diff_spa'] = p1_lead_spa - p2_spa 
+
+        # === INIZIALIZZAZIONE CONTATORI DINAMICI ===
+        p1_damage_list = []
+        p2_damage_list = []
+        pokemon_hp_tracker = {} 
+        
+        p1_switch_count = 0
+        p2_switch_count = 0
+        p1_last_active_name = p1_team[0].get('name', '') if p1_team else ''
+        p2_last_active_name = p2_lead.get('name', '') if p2_lead else ''
+        
+        # Inizia il set dei P2 rivelati con il lead
+        p2_revealed_names = set([p2_last_active_name]) if p2_last_active_name else set()
+
         #informazioni dinamiche della battaglia
         #Chi mantiene più HP medi e conduce più turni spesso vince anche se la battaglia non è ancora finita
         timeline = battle.get('battle_timeline', [])
@@ -1073,14 +1109,57 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             #percentuale di tempo in vantaggio (ovvero media dei booleani che indicano il vantaggio => proporzione del vantaggio)
             features['p1_hp_advantage_mean'] = np.mean(np.array(p1_hp) > np.array(p2_hp))#GRAN BELLA OPZIONE DI CLASSIFICAZIONE POSSIBILE APPLICAZIONE DI EFFETTI DI ETEROGENEITA
 
-            #SUM OF FINAL HP PERCENTAGE OF EACH PLAYER
-            p1_hp_final ={}
-            p2_hp_final ={}
+           # === NUOVO CICLO UNIFICATO (Sostituisce quello vecchio) ===
+            p1_hp_final = {}
+            p2_hp_final = {}
+            
             for t in timeline:
+                # 1. Logica Base (HP Finali)
                 if t.get('p1_pokemon_state'):
-                    p1_hp_final[t['p1_pokemon_state']['name']]=t['p1_pokemon_state']['hp_pct']
+                    p1_hp_final[t['p1_pokemon_state']['name']] = t['p1_pokemon_state']['hp_pct']
                 if t.get('p2_pokemon_state'):
-                    p2_hp_final[t['p2_pokemon_state']['name']]=t['p2_pokemon_state']['hp_pct']
+                    p2_hp_final[t['p2_pokemon_state']['name']] = t['p2_pokemon_state']['hp_pct']
+
+                # 2. Preparazione Variabili
+                p1_state = t.get('p1_pokemon_state', {})
+                p1_name = p1_state.get('name')
+                p1_key = f"p1_{p1_name}"
+                p2_state = t.get('p2_pokemon_state', {})
+                p2_name = p2_state.get('name')
+                p2_key = f"p2_{p2_name}"
+                p1_move = t.get('p1_move_details')
+                p2_move = t.get('p2_move_details')
+
+                # 3. Aggiorna Pokedex P2
+                if p2_name: p2_revealed_names.add(p2_name)
+
+                # 4. Calcolo Danni (P1 attacca P2)
+                if p1_move and p1_name and p2_name and p1_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p2_key, 1.0)
+                    new_hp = p2_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: p1_damage_list.append(damage_dealt)
+
+                # 5. Calcolo Danni (P2 attacca P1)
+                if p2_move and p1_name and p2_name and p2_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p1_key, 1.0)
+                    new_hp = p1_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: p2_damage_list.append(damage_dealt)
+
+                # 6. Aggiorna Tracker HP
+                if p1_name: pokemon_hp_tracker[p1_key] = p1_state.get('hp_pct', 1.0)
+                if p2_name: pokemon_hp_tracker[p2_key] = p2_state.get('hp_pct', 1.0)
+
+                # 7. Conteggio Switch
+                if p1_name and p1_name != p1_last_active_name:
+                    p1_switch_count += 1
+                    p1_last_active_name = p1_name
+                if p2_name and p2_name != p2_last_active_name:
+                    p2_switch_count += 1
+                    p2_last_active_name = p2_name
+            # === FINE CICLO UNIFICATO ===
+
             #numero di pokemon usati dal giocatore nei primi 30 turni
             features['p1_n_pokemon_use'] =len(p1_hp_final.keys())
             features['p2_n_pokemon_use'] =len(p2_hp_final.keys())
@@ -1214,7 +1293,41 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
             #restyle RIMOSSO 84.02% (+/- 0.50%) => 84.03% (+/- 0.57%)
             features['p1_avg_high_speed_stat_battaglia'] = np.mean(np.array(speeds) > HIGH_SPEED_THRESHOLD)
+               
 
+            #####ABBASSANO L'ACCURACY DA 84.44 A 84.15  ################ 
+            # === CALCOLI POKEDEX E SWITCH (Post-Timeline) ===
+            features = calculate_damage_metrics(features, p1_damage_list, p2_damage_list)
+            # 1. Salva i conteggi Switch
+            features['p1_switch_count'] = p1_switch_count
+            features['p2_switch_count'] = p2_switch_count
+            features['switch_count_diff'] = p1_switch_count - p2_switch_count
+            
+            # 2. Salva conteggio Pokedex
+            features['p2_n_pokemon_revealed'] = len(p2_revealed_names)
+            
+            # 3. Calcola Statistiche Medie P2 Rivelato
+            p2_revealed_stats = {'hp': [], 'spe': [], 'atk': [], 'def': [], 'spa': [], 'spd': [], 'types': []}
+            for name in p2_revealed_names:
+                if name in POKEDEX:
+                    poke_data = POKEDEX[name]
+                    p2_revealed_stats['hp'].append(poke_data.get('base_hp', 0))
+                    p2_revealed_stats['spe'].append(poke_data.get('base_spe', 0))
+                    p2_revealed_stats['atk'].append(poke_data.get('base_atk', 0))
+                    p2_revealed_stats['def'].append(poke_data.get('base_def', 0))
+                    p2_revealed_stats['spa'].append(poke_data.get('base_spa', 0))
+                    p2_revealed_stats['spd'].append(poke_data.get('base_spd', 0))
+                    p2_revealed_stats['types'].extend(poke_data.get('types', []))
+
+            features['p2_revealed_mean_hp'] = np.mean(p2_revealed_stats['hp']) if p2_revealed_stats['hp'] else 0.0
+            features['p2_revealed_mean_spe'] = np.mean(p2_revealed_stats['spe']) if p2_revealed_stats['spe'] else 0.0
+            features['p2_revealed_mean_atk'] = np.mean(p2_revealed_stats['atk']) if p2_revealed_stats['atk'] else 0.0
+            features['p2_revealed_mean_def'] = np.mean(p2_revealed_stats['def']) if p2_revealed_stats['def'] else 0.0
+            features['p2_revealed_mean_spa'] = np.mean(p2_revealed_stats['spa']) if p2_revealed_stats['spa'] else 0.0
+            features['p2_revealed_mean_spd'] = np.mean(p2_revealed_stats['spd']) if p2_revealed_stats['spd'] else 0.0
+            
+            all_types = [t for t in p2_revealed_stats['types'] if t != 'notype']
+            features['p2_revealed_type_diversity'] = len(set(all_types))
 
         ##interaction features
         #CHECK 84.45% (+/- 1.00%) => 84.44% (+/- 0.99%)

@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score, GridSearchCV
 import os
+from typing import List, Dict
 
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -77,6 +78,40 @@ test_file_path = os.path.join(DATA_PATH, 'test.jsonl')
 
 train_data = read_train_data(train_file_path)
 test_data = read_test_data(test_file_path)
+
+def calculate_damage_metrics(features, p1_damage_list, p2_damage_list):
+    """
+    Calcola le metriche di danno (medie e massime) basate
+    sulle liste di danni (perdita HP) calcolate dalla timeline.
+    """
+    
+    # --- Calcolo P1 ---
+    if len(p1_damage_list) > 0:
+        p1_avg = np.mean(p1_damage_list)
+        p1_max = np.max(p1_damage_list)
+    else:
+        p1_avg = 0.0
+        p1_max = 0.0
+        
+    # --- Calcolo P2 ---
+    if len(p2_damage_list) > 0:
+        p2_avg = np.mean(p2_damage_list)
+        p2_max = np.max(p2_damage_list)
+    else:
+        p2_avg = 0.0
+        p2_max = 0.0
+
+    # --- Salva le feature (USANDO I NOMI DI CODICE 2) ---
+    features['p1_move_damage_mean'] = p1_avg  # <- Nome dal Codice 2
+    features['p2_move_damage_mean'] = p2_avg  # <- Nome dal Codice 2
+    features['diff_move_damage_mean'] = p1_avg - p2_avg # <- Nome da Codice 2
+    
+    # Aggiungiamo anche il max (è utile)
+    features['p1_move_damage_max'] = p1_max
+    features['p2_move_damage_max'] = p2_max
+    features['diff_move_damage_max'] = p1_max - p2_max
+    
+    return features
 
 def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test=False, battle_id=''):
     if not timeline:
@@ -564,13 +599,55 @@ def calcola_feature_boost(timeline):
         "diff_boost": diff_boost
     }
 
-
+def build_pokedex(all_data: List[Dict]) -> Dict:
+    """
+    Scorre tutti i dati di battaglia (train + test) una volta per 
+    creare un dizionario "Pokédex" che mappa i nomi dei Pokémon 
+    alle loro statistiche base e tipi.
+    """
+    pokedex = {}
+    print("Costruzione del Pokédex dai dati di battaglia...")
+    
+    # Usiamo tqdm qui per mostrare il progresso
+    for battle in tqdm(all_data, desc="Building Pokedex"):
+        # Estrai info dal team P1 (fonte più affidabile)
+        if battle.get('p1_team_details'):
+            for pokemon in battle['p1_team_details']:
+                name = pokemon.get('name')
+                if name and name not in pokedex:
+                    pokedex[name] = {
+                        'base_hp': pokemon.get('base_hp', 0),
+                        'base_atk': pokemon.get('base_atk', 0),
+                        'base_def': pokemon.get('base_def', 0),
+                        'base_spa': pokemon.get('base_spa', 0),
+                        'base_spd': pokemon.get('base_spd', 0),
+                        'base_spe': pokemon.get('base_spe', 0),
+                        'types': pokemon.get('types', [])
+                    }
+        
+        # Estrai info dal lead P2 (per Pokémon non visti in P1)
+        if battle.get('p2_lead_details'):
+            pokemon = battle['p2_lead_details']
+            name = pokemon.get('name')
+            if name and name not in pokedex:
+                 pokedex[name] = {
+                    'base_hp': pokemon.get('base_hp', 0),
+                    'base_atk': pokemon.get('base_atk', 0),
+                    'base_def': pokemon.get('base_def', 0),
+                    'base_spa': pokemon.get('base_spa', 0),
+                    'base_spd': pokemon.get('base_spd', 0),
+                    'base_spe': pokemon.get('base_spe', 0),
+                    'types': pokemon.get('types', [])
+                }
+                
+    print(f"Pokédex costruito! Trovati {len(pokedex)} Pokémon unici.")
+    return pokedex
 
 
 
 
 # Output: {'p1_hp_pct_sum': 2.0, 'p2_hp_pct_sum': 1.9, 'diff_hp_pct': 0.1}
-def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
+def create_features(data: List[Dict], POKEDEX: Dict, is_test=False) -> pd.DataFrame:
     feature_list = []
     pokemon_dict = {}
     for battle in data:
@@ -615,6 +692,20 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         features['p1_hp_pct_sum'] = hp_result['p1_hp_pct_sum']
         features['p2_hp_pct_sum'] = hp_result['p2_hp_pct_sum']
         features['diff_hp_pct'] = hp_result['diff_hp_pct']
+
+        # === INIZIALIZZAZIONE CONTATORI DINAMICI ===
+        p1_damage_list = []
+        p2_damage_list = []
+        pokemon_hp_tracker = {} 
+        
+        p1_switch_count = 0
+        p2_switch_count = 0
+        p1_last_active_name = p1_team[0].get('name', '') if p1_team else ''
+        p2_last_active_name = p2_lead.get('name', '') if p2_lead else ''
+        
+        # Inizia il set dei P2 rivelati con il lead
+        p2_revealed_names = set([p2_last_active_name]) if p2_last_active_name else set()
+
         timeline = battle.get('battle_timeline', [])
         if timeline:
             #result = compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test, battle_id)
@@ -638,6 +729,56 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['p2_number_attacks'] = moves_result['p2_number_attacks']
             features['p2_number_status'] = moves_result['p2_number_status']
             
+            # === NUOVO CICLO UNIFICATO (Sostituisce quello vecchio) ===
+            p1_hp_final = {}
+            p2_hp_final = {}
+            
+            for t in timeline:
+                # 1. Logica Base (HP Finali)
+                if t.get('p1_pokemon_state'):
+                    p1_hp_final[t['p1_pokemon_state']['name']] = t['p1_pokemon_state']['hp_pct']
+                if t.get('p2_pokemon_state'):
+                    p2_hp_final[t['p2_pokemon_state']['name']] = t['p2_pokemon_state']['hp_pct']
+
+                # 2. Preparazione Variabili
+                p1_state = t.get('p1_pokemon_state', {})
+                p1_name = p1_state.get('name')
+                p1_key = f"p1_{p1_name}"
+                p2_state = t.get('p2_pokemon_state', {})
+                p2_name = p2_state.get('name')
+                p2_key = f"p2_{p2_name}"
+                p1_move = t.get('p1_move_details')
+                p2_move = t.get('p2_move_details')
+
+                # 3. Aggiorna Pokedex P2
+                if p2_name: p2_revealed_names.add(p2_name)
+
+                # 4. Calcolo Danni (P1 attacca P2)
+                if p1_move and p1_name and p2_name and p1_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p2_key, 1.0)
+                    new_hp = p2_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: p1_damage_list.append(damage_dealt)
+
+                # 5. Calcolo Danni (P2 attacca P1)
+                if p2_move and p1_name and p2_name and p2_move.get('category', '').lower() in ['physical', 'special']:
+                    old_hp = pokemon_hp_tracker.get(p1_key, 1.0)
+                    new_hp = p1_state.get('hp_pct', old_hp)
+                    damage_dealt = old_hp - new_hp
+                    if damage_dealt > 0: p2_damage_list.append(damage_dealt)
+
+                # 6. Aggiorna Tracker HP
+                if p1_name: pokemon_hp_tracker[p1_key] = p1_state.get('hp_pct', 1.0)
+                if p2_name: pokemon_hp_tracker[p2_key] = p2_state.get('hp_pct', 1.0)
+
+                # 7. Conteggio Switch
+                if p1_name and p1_name != p1_last_active_name:
+                    p1_switch_count += 1
+                    p1_last_active_name = p1_name
+                if p2_name and p2_name != p2_last_active_name:
+                    p2_switch_count += 1
+                    p2_last_active_name = p2_name
+            # === FINE CICLO UNIFICATO ===
             """
             """
             #non ancora usate priority
@@ -653,18 +794,72 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             features['boost_p1'] = boost_result['boost_p1']
             features['boost_p2'] = boost_result['boost_p2']
             features['diff_boost'] = boost_result['diff_boost']
+
+            # === CALCOLI POKEDEX E SWITCH (Post-Timeline) ===
+            features = calculate_damage_metrics(features, p1_damage_list, p2_damage_list)
+            # 1. Salva i conteggi Switch
+            features['p1_switch_count'] = p1_switch_count
+            features['p2_switch_count'] = p2_switch_count
+            features['switch_count_diff'] = p1_switch_count - p2_switch_count
+            
+            # 2. Salva conteggio Pokedex
+            features['p2_n_pokemon_revealed'] = len(p2_revealed_names)
+            
+            # 3. Calcola Statistiche Medie P2 Rivelato
+            p2_revealed_stats = {'hp': [], 'spe': [], 'atk': [], 'def': [], 'spa': [], 'spd': [], 'types': []}
+            for name in p2_revealed_names:
+                if name in POKEDEX:
+                    poke_data = POKEDEX[name]
+                    p2_revealed_stats['hp'].append(poke_data.get('base_hp', 0))
+                    p2_revealed_stats['spe'].append(poke_data.get('base_spe', 0))
+                    p2_revealed_stats['atk'].append(poke_data.get('base_atk', 0))
+                    p2_revealed_stats['def'].append(poke_data.get('base_def', 0))
+                    p2_revealed_stats['spa'].append(poke_data.get('base_spa', 0))
+                    p2_revealed_stats['spd'].append(poke_data.get('base_spd', 0))
+                    p2_revealed_stats['types'].extend(poke_data.get('types', []))
+
+            features['p2_revealed_mean_hp'] = np.mean(p2_revealed_stats['hp']) if p2_revealed_stats['hp'] else 0.0
+            features['p2_revealed_mean_spe'] = np.mean(p2_revealed_stats['spe']) if p2_revealed_stats['spe'] else 0.0
+            features['p2_revealed_mean_atk'] = np.mean(p2_revealed_stats['atk']) if p2_revealed_stats['atk'] else 0.0
+            features['p2_revealed_mean_def'] = np.mean(p2_revealed_stats['def']) if p2_revealed_stats['def'] else 0.0
+            features['p2_revealed_mean_spa'] = np.mean(p2_revealed_stats['spa']) if p2_revealed_stats['spa'] else 0.0
+            features['p2_revealed_mean_spd'] = np.mean(p2_revealed_stats['spd']) if p2_revealed_stats['spd'] else 0.0
+            
+            all_types = [t for t in p2_revealed_stats['types'] if t != 'notype']
+            features['p2_revealed_type_diversity'] = len(set(all_types))
             
         feature_list.append(features)
     return pd.DataFrame(feature_list).fillna(0)
-train_df = create_features(train_data)
-#"""
+"""
+train_df = create_features(train_data,POKEDEX)
+
 features = [col for col in train_df.columns if col not in ['battle_id', 'player_won']]
+
 X = train_df[features]
-y = train_df['player_won']
-#"""
+y = train_df['player_won']"""
 
+def read_train_data(train_file_path):
+    train_data = []
+    # Read the file line by line
+    try:
+        with open(train_file_path, 'r') as f:
+            for line in f:
+                # json.loads() parses one line (one JSON object) into a Python dictionary
+                train_data.append(json.loads(line))
+    except FileNotFoundError:
+        print(f"ERROR: Could not find the training file at '{train_file_path}'.")
+        print("Please make sure you have added the competition data to this notebook.")
+    finally:
+        return train_data
 
+def read_test_data(test_file_path):
+    test_data = []
+    with open(test_file_path, 'r') as f:
+        for line in f:
+            test_data.append(json.loads(line))
+    return test_data
 
+"""
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -765,35 +960,51 @@ def get_power_set_non_empty_as_list(array):
       list(subset_tuple) for subset_tuple in non_empty_subsets_tuples
   ]
   
-  return non_empty_subsets_lists
+  return non_empty_subsets_lists"""
 
-def final():
+def final(stacked_model_to_train, X_train_data, y_train_data):
+    """
+    Seleziona le feature finali, addestra il modello, e stampa
+    le metriche di performance (training vs. cross-validation).
+    """
     
+    # Questa è la tua lista di feature "d'élite"
     final_features = [
-                'diff_type_advantage', 'p1_type_advantage', 
-                'diff_status',
-                'diff_speed_first', 'diff_stat',
-                'p2_hp_pct_sum', 'diff_hp_pct',
-                'p1_number_attacks', 'p1_number_status',
-                'p2_sum_negative_priority', 'p1_move_power_weighted',#
-                'boost_p1', 'boost_p2', 'diff_boost',#14
-                'sum_stat_lead_p1', 'sum_stat_lead_p2',#16
-            ]
-    selected = features
+            'diff_type_advantage', 'p1_type_advantage', 
+            'diff_status',
+            'diff_speed_first', 'diff_stat',
+            'p2_hp_pct_sum', 'diff_hp_pct',
+            'p1_number_attacks', 'p1_number_status',
+            'p2_sum_negative_priority', 'p1_move_power_weighted',#
+            'boost_p1', 'boost_p2', 'diff_boost',#14
+            'sum_stat_lead_p1', 'sum_stat_lead_p2',#16
+        ]
+    selected = final_features
+    
+    print(f"Esecuzione di 'final' con {len(selected)} feature selezionate...")
 
-    X_selected = X[selected]
-    stacked_model.fit(X_selected, y)
-    final_pipe = stacked_model
-    #EVALUATE
-
+    # Filtra i dati di training (X) usando solo la lista 'selected'
+    X_selected = X_train_data[selected] 
+    
+    # Addestra il modello (ora 'stacked_model_to_train' è il tuo 'stacked_model')
+    print("Addestramento del modello finale sul set di feature selezionate...")
+    stacked_model_to_train.fit(X_selected, y_train_data)
+    
+    # Il modello addestrato è ora il 'final_pipe'
+    final_pipe = stacked_model_to_train
+    
+    #--- EVALUATE ---
+    print("Valutazione del modello (Controllo Overfitting)...")
     y_train_pred = final_pipe.predict(X_selected)
     y_train_proba = final_pipe.predict_proba(X_selected)[:, 1]
 
-    #CHECK OVERFITTING
-    acc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring='accuracy')
-    auc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring='roc_auc')
+    #--- CHECK OVERFITTING (con Cross-Validation) ---
+    acc = cross_val_score(final_pipe, X_selected, y_train_data, cv=5, scoring='accuracy')
+    auc = cross_val_score(final_pipe, X_selected, y_train_data, cv=5, scoring='roc_auc')
+    
+    print("\n--- Risultati Finali ---")
     print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
-    print(f"{[f for f in selected]},{accuracy_score(y, y_train_pred)}, {roc_auc_score(y, y_train_proba)}, {acc.mean():.4f} ± {acc.std():.4f}, {auc.mean():.4f} ± {auc.std():.4f}")
-
-    #predict_and_submit(test_df, selected, final_pipe)
-final()
+    print(f"{[f for f in selected]},{accuracy_score(y_train_data, y_train_pred):.4f}, {roc_auc_score(y_train_data, y_train_proba):.4f}, {acc.mean():.4f} ± {acc.std():.4f}, {auc.mean():.4f} ± {auc.std():.4f}")
+    
+    # Ritorna il modello addestrato E la lista di feature che ha usato
+    return final_pipe, selected
