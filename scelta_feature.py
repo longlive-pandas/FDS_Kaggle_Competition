@@ -150,7 +150,7 @@
             "p1_pokemon_state|p2_pokemon_state": {
                 "name": "exeggutor",
                 "hp_pct": 1.0,
-                "status": "'nostatus'|'slp', 'frz', 'brn', 'tox', 'fnt', 'par', 'psn'",<-1.features: diff_status (scartate status_p1, status_p2)
+                "status": "'nostatus'|'slp', 'frz', 'brn', 'tox', 'fnt', 'par', 'psn'",<-1.features: diff_status (scartate status_p1, status_p2)|major_status_p1, major_status_p2, major_status_diff
                 "effects": [
                     "noeffect"
                 ],
@@ -368,9 +368,9 @@
             },
             "p1_move_details|p2_move_details": {
                 "name": "sleeppowder",
-                "category": "STATUS",       <-features 'p1/2_move_power_weighted', 'p1/2_number_attacks', 'p1/2_number_status'
-                "base_power": 0,            <-features 'p1/2_move_power_weighted', 'p1/2_number_attacks', 'p1/2_number_status'
-                "accuracy": 0.75,           <-features 'p1/2_move_power_weighted', 'p1/2_number_attacks', 'p1/2_number_status'
+                "category": "STATUS",       <-features 'p1_number_status', 'p1_number_attacks' (scartate 'p2_number_attacks', p2_number_status, diff_number_status)
+                "base_power": 0,            <-features 'p1_move_power_weighted', (scartata p2_move_power_weighted)
+                "accuracy": 0.75,           <-features 'p1_move_power_weighted', (scartata p2_move_power_weighted)
                 "priority": 0|-1
             }
             
@@ -454,7 +454,7 @@
             },
             "p1_move_details|p2_move_details": {
                 "name": "sleeppowder",
-                "priority": 0|-1        <-features: p1_sum_negative_priority, p2_sum_negative_priority
+                "priority": 0|-1        <-features: p2_sum_negative_priority (scartate p1_sum_negative_priority, diff_negative_priority)
             }
             
         }
@@ -466,20 +466,20 @@
     "p1_team_details(array 6)": [
         {
             "name": "exeggutor",
-            "base_hp": 95,          <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')
-            "base_atk": 95,         <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')
-            "base_def": 85,         <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')
-            "base_spa": 125,        <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')
-            "base_spd": 125,        <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')
+            "base_hp": 95,          <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')|mean, std, min, max
+            "base_atk": 95,         <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')|mean, std, min, max
+            "base_def": 85,         <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')|mean, std, min, max
+            "base_spa": 125,        <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')|mean, std, min, max
+            "base_spd": 125,        <- feature 'sum_stat_lead_p1' (scartata 'diff_stat_lead')|mean, std, min, max
         }
     ],
     "p2_lead_details": {
         "name": "chansey",
-        "base_hp": 250,          <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')
-        "base_atk": 5,           <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')
-        "base_def": 5,           <- feature sum_stat_lead_p2' (scartata 'diff_stat_lead')
-        "base_spa": 105,         <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')
-        "base_spd": 105,         <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')
+        "base_hp": 250,          <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')|base_hp
+        "base_atk": 5,           <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')|base_atk
+        "base_def": 5,           <- feature sum_stat_lead_p2' (scartata 'diff_stat_lead')|base_def
+        "base_spa": 105,         <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')|base_spa
+        "base_spd": 105,         <- feature 'sum_stat_lead_p2' (scartata 'diff_stat_lead')|base_spd
     },
     "battle_timeline(array 30)": [
         {
