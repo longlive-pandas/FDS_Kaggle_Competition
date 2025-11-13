@@ -125,7 +125,7 @@ def compute_mean_stab_moves(timeline, pokemon_dict):
         "diff_mean_stab": p1_mean_stab - p2_mean_stab
     }
 
-def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test=False, battle_id=''):
+def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart):
     if not timeline:
         return {
             "p1_type_advantage": 1.0,
@@ -198,10 +198,6 @@ def compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart,
     #timeline summary
     p1_avg = np.mean(p1_advantages)
     p2_avg = np.mean(p2_advantages)
-    # if is_test and battle_id == 109:
-    #     print(f"first team:{debug_dict_p1}, second team:{debug_dict_p2}")
-    #     #,p1_avg,p2_avg,p1_avg - p2_avg
-    #     exit()
     return {
         "p1_type_advantage": p1_avg,
         "p2_type_advantage": p2_avg,
@@ -753,7 +749,455 @@ def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, fl
         features['p1_status_move_rate'] = 0.0
         
     return features
-def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
+
+def create_feature_instance(battle, pokemon_dict, status_change_diff):
+    battle_id = battle.get("battle_id")#debugging purposes
+    features = {}
+    # --- Player 1 Team Features ---
+    p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
+    p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_spd = p1_lead_spa = 0.0
+    p1_team = battle.get('p1_team_details', [])
+    ####
+    status_features = calculate_status_efficacy_features(battle)
+    #83.97% (+/- 0.40%)=>84.01% (+/- 0.51%)
+    features['p1_major_status_infliction_rate'] = status_features['p1_major_status_infliction_rate']
+    #84.25% (+/- 0.37%) => 84.25% (+/- 0.33%)
+    features['p1_cumulative_major_status_turns_pct'] = status_features['p1_cumulative_major_status_turns_pct']
+    p2_status_features = calculate_p2_status_control_features(battle)
+    features['p2_major_status_infliction_rate'] = p2_status_features['p2_major_status_infliction_rate']
+    features['p2_cumulative_major_status_turns_pct'] = p2_status_features['p2_cumulative_major_status_turns_pct']
+    
+    ###
+    dynamic_boost_features = calculate_dynamic_boost_features(battle)
+    """
+    Mancano 1,2; 1,3
+    1,2,3 NO da 8394
+    Fitting 5 folds for each of 34 candidates, totalling 170 fits
+    Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+    Best CV mean: 0.8428 ± 0.0041 (da 8394 a 8429)
+    It took 104.46463012695312 time
+
+    1
+    Fitting 5 folds for each of 34 candidates, totalling 170 fits
+    Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.1, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+    Best CV mean: 0.8429 ± 0.0046 (da 8408 a 8430)
+    It took 79.87716317176819 time
+    """
+    #features['p1_net_boost_sum'] = dynamic_boost_features['p1_net_boost_sum']
+    """
+    1,2 NO
+    Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
+    Best CV mean: 0.8428 ± 0.0043 (da 8397 a 8426)
+    """
+    """
+    2,3 NO
+    Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.8427 ± 0.0048 (da 8416 a 8451)
+    It took 51.33575224876404 time
+    """
+
+    """
+    2 molto buono
+    Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.8427 ± 0.0042 (da 8419 a 8451)
+    It took 52.9518678188324 time
+    """
+    features['p1_max_offense_boost_diff'] = dynamic_boost_features['p1_max_offense_boost_diff']
+    """
+    3
+    Best CV mean: 0.8428 ± 0.0041 (da 8413 a 8444)
+    It took 284.0617139339447 time
+    """
+    
+    #features['p1_max_speed_boost_diff'] = dynamic_boost_features['p1_max_speed_boost_diff']
+    
+
+    ####
+    """
+    nessuno
+    Best CV mean: 0.8442 ± 0.0041 (da 8419 a 8451)
+
+    1,2
+    Fitting 5 folds for each of 34 candidates, totalling 170 fits
+    Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8434)
+    """
+
+    """
+    1 CHOSEN (improved min, same max, decrease best)
+    Fitting 5 folds for each of 34 candidates, totalling 170 fits
+    Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.8427 ± 0.0042 (da 8420 a 8451)
+    """
+
+    """
+    2
+    Fitting 5 folds for each of 34 candidates, totalling 170 fits
+    Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
+    Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8435)
+    """
+    # Integrate Team Coverage (Step 4)
+    #print("calculating p1_team_super_effective_moves")
+    p1_team_super_effective_moves = calculate_team_coverage_features(battle, type_chart)
+    features['p1_team_super_effective_moves'] = p1_team_super_effective_moves['p1_team_super_effective_moves']
+    
+    # Integrate Action Efficiency (Step 5)
+    p1_status_move_rate = calculate_action_efficiency_features(battle)
+    #features['p1_status_move_rate'] = p1_status_move_rate['p1_status_move_rate']
+    ####
+    ##
+    expected_damage_ratio_turn_1 = 0.0
+    try:
+        """
+        0.0
+        4.61512051684126
+        0.8873031950009029
+        -3.7636451046866286
+        """
+        expected_damage_ratio_turn_1 = calculate_expected_damage_ratio_turn_1(battle, type_chart)
+        #print(expected_damage_ratio_turn_1)
+        #83.97% (+/- 0.52%)
+        features['expected_damage_ratio_turn_1'] = expected_damage_ratio_turn_1
+    except Exception:
+        features['expected_damage_ratio_turn_1'] = 0.0
+    ##
+    if p1_team:
+        ####
+        # --- P1 Team Maximum Potential Features ---
+        # Calculate Base Stat Total (BST) for each Pokémon
+        bst_values = []
+        
+        # Collect max offense and max speed across the entire team
+        max_offense = 0
+        max_speed = 0
+
+        for p in p1_team:
+            p_hp = p.get('base_hp', 0)
+            p_atk = p.get('base_atk', 0)
+            p_def = p.get('base_def', 0)
+            p_spa = p.get('base_spa', 0)
+            p_spd = p.get('base_spd', 0)
+            p_spe = p.get('base_spe', 0)
+            
+            # 1. Max Offensive Stat
+            current_offense = max(p_atk, p_spa)
+            max_offense = max(max_offense, current_offense)
+            
+            # 2. Max Speed Stat
+            max_speed = max(max_speed, p_spe)
+            
+            # 3. BST for Variance Calculation
+            bst_values.append(p_hp + p_atk + p_def + p_spa + p_spd + p_spe)
+        #together 83.97% (+/- 0.52%)=>83.91% (+/- 0.44%)
+        features['p1_max_offensive_stat'] = max_offense#83.97% (+/- 0.52%)=>83.97% (+/- 0.40%)
+        #CHECK 84.30% (+/- 1.17%) => 84.31% (+/- 1.09%)
+        features['p1_max_speed_stat'] = max_speed#83.97% (+/- 0.52%)=>83.95% (+/- 0.54%)
+        
+        #3. BST Variance (only calculated if there's more than one Pokémon)
+        #var/std 83.97% (+/- 0.52%)=>83.91% (+/- 0.44%)/83.94% (+/- 0.44%)
+        # if len(bst_values) > 1:
+        #     features['p1_team_bst_variance'] = np.std(bst_values)
+        # else:
+        #     features['p1_team_bst_variance'] = 0.0 # Should be rare for a 6v6 battle
+        ####
+        p1_mean_hp = np.mean([p.get('base_hp', 0) for p in p1_team])
+        p1_mean_spe = np.mean([p.get('base_spe', 0) for p in p1_team])
+        p1_mean_atk = np.mean([p.get('base_atk', 1) for p in p1_team])
+        p1_mean_def = np.mean([p.get('base_def', 0) for p in p1_team])
+        p1_mean_spd = np.mean([p.get('base_spd', 0) for p in p1_team])
+
+        features['p1_mean_hp'] = p1_mean_hp
+        #restyle RIMOSSO 83.89% (+/- 0.55%) => 83.98% (+/- 0.47%)
+        features['p1_mean_spe'] = p1_mean_spe
+        features['p1_mean_atk'] = p1_mean_atk#83.88% (+/- 0.54%)
+        features['p1_mean_def'] = p1_mean_def
+        features['p1_mean_sp'] = p1_mean_spd
+
+        #PER UN CONFRONTO EQUO UTILIZZIAMO SOLO DATI DEL LEADER ANCHE NELLA SQUADRA 1 PER LE DIFFERENZE
+        p1_lead_hp =  p1_team[0].get('base_hp', 0)
+        p1_lead_spe = p1_team[0].get('base_spe', 0)
+        p1_lead_atk = p1_team[0].get('base_atk', 0)
+        p1_lead_def = p1_team[0].get('base_def', 0)
+        p1_lead_spd =  p1_team[0].get('base_spd', 0)
+
+
+    # --- Player 2 Lead Features ---
+    p2_hp = p2_spe = p2_atk = p2_def = p2_spd = 0.0
+    p2_lead = battle.get('p2_lead_details')
+    if p2_lead:
+        
+        # Player 2's lead Pokémon's stats
+        p2_hp = p2_lead.get('base_hp', 0)
+        p2_spe = p2_lead.get('base_spe', 0)
+        p2_atk = p2_lead.get('base_atk', 0)
+        p2_def = p2_lead.get('base_def', 0)
+        p2_spd = p2_lead.get('base_spd', 0)
+
+    # I ADD THE DIFFS/DELTAS
+    features['diff_hp']  = p1_lead_hp  - p2_hp
+    features['diff_spe'] = p1_lead_spe - p2_spe
+    features['diff_atk'] = p1_lead_atk - p2_atk
+    features['diff_def'] = p1_lead_def - p2_def#83.93% (+/- 0.53%) => 83.93% (+/- 0.52%)
+    #CHECK 84.31% (+/- 1.09%) => 84.31% (+/- 1.09%)
+    features['diff_spd'] =  p1_lead_spd - p2_spd#83.93% (+/- 0.53%) => 83.87% (+/- 0.57%)
+    
+    #informazioni dinamiche della battaglia
+    #Chi mantiene più HP medi e conduce più turni spesso vince anche se la battaglia non è ancora finita
+    timeline = battle.get('battle_timeline', [])
+    if timeline:
+        #boost+damage diff
+        # --- Mean attack and defense boosts across timeline ---
+        p1_atk_boosts, p2_atk_boosts, p2_def_boosts, p1_def_boosts = [], [], [], []
+
+        for turn in timeline:
+            p1_boosts = turn.get("p1_pokemon_state", {}).get("boosts", {})
+            p2_boosts = turn.get("p2_pokemon_state", {}).get("boosts", {})
+            p1_atk_boosts.append(p1_boosts.get("atk", 0))
+            p2_atk_boosts.append(p2_boosts.get("atk", 0))
+            p1_def_boosts.append(p1_boosts.get("def", 0))
+            p2_def_boosts.append(p2_boosts.get("def", 0))
+
+        p1_atk_boosts = np.array(p1_atk_boosts)
+        p2_atk_boosts = np.array(p2_atk_boosts)
+        p1_def_boosts = np.array(p1_def_boosts)
+        p2_def_boosts = np.array(p2_def_boosts)
+
+        #priorità delle mosse
+        p1_priorities = []
+        p2_priorities = []
+
+        for turn in timeline:
+            move1 = turn.get("p1_move_details")
+            move2 = turn.get("p2_move_details")
+
+            if isinstance(move1, dict) and move1.get("priority") is not None:
+                p1_priorities.append(move1["priority"])
+            if isinstance(move2, dict) and move2.get("priority") is not None:
+                p2_priorities.append(move2["priority"])
+
+        #priorità media per squadra
+        p1_avg_move_priority = np.mean(p1_priorities) if p1_priorities else 0.0
+        p2_avg_move_priority = np.mean(p2_priorities) if p2_priorities else 0.0
+
+        #vantaggio relativo
+        features["priority_diff"] = p1_avg_move_priority - p2_avg_move_priority
+
+        #frazione dei turni in cui p1 ha più priorità
+        if p1_priorities and p2_priorities:
+            min_len = min(len(p1_priorities), len(p2_priorities))
+            higher_priority_turns = sum(p1_priorities[i] > p2_priorities[i] for i in range(min_len))
+            features["priority_rate_advantage"] = higher_priority_turns / max(1, min_len)
+        else:
+            features["priority_rate_advantage"] = 0.0
+
+        #new feature: confronta stat se disponibili
+        #differenza di statistiche nei turni
+        stat_diffs = {
+            "base_atk": [],
+            "base_spa": [],
+            "base_spe": []
+        }
+
+        for t in timeline:
+            p1_state = t.get("p1_pokemon_state", {})
+            p2_state = t.get("p2_pokemon_state", {})
+
+            p1_name = p1_state.get("name")
+            p2_name = p2_state.get("name")
+
+            #base stats
+            p1_stats = get_pokemon_stats(p1_team, p1_name) if p1_name else None
+            p2_stats = None
+
+            # p2: if same as lead, use lead; otherwise, None
+            p2_lead = battle.get("p2_lead_details", {})
+            if p2_name and p2_lead and p2_lead.get("name") == p2_name:
+                p2_stats = {
+                        "base_hp": p2_lead.get("base_hp", 0),
+                    "base_atk": p2_lead.get("base_atk", 0),
+                        "base_def": p2_lead.get("base_def", 0),
+                    "base_spa": p2_lead.get("base_spa", 0),
+                        "base_spd": p2_lead.get("base_spd", 0),
+                    "base_spe": p2_lead.get("base_spe", 0)
+                }
+
+            #salto i turni se non ho le stati di uno dei 2 pokemon che si affrontano
+            if not p1_stats or not p2_stats:
+                continue
+
+            #diff
+            for stat in stat_diffs.keys():
+                diff = p1_stats[stat] - p2_stats[stat]
+                stat_diffs[stat].append(diff)
+
+        #aggrego le differenze di statistiche nella timeline
+        for stat, diffs in stat_diffs.items():
+            if diffs:
+                features[f"mean_{stat}_diff_timeline"] = np.mean(diffs)#83.74=>83.87
+                features[f"std_{stat}_diff_timeline"] = np.std(diffs)#83.78=>83.87
+            else:
+                features[f"mean_{stat}_diff_timeline"] = 0.0
+                features[f"std_{stat}_diff_timeline"] = 0.0
+        #SALUTE
+        p1_hp = [t['p1_pokemon_state']['hp_pct'] for t in timeline if t.get('p1_pokemon_state')]
+        p2_hp = [t['p2_pokemon_state']['hp_pct'] for t in timeline if t.get('p2_pokemon_state')]
+        #vantaggio medio in salute (media della differenza tra la salute dei pokemon del primo giocatore e quella dei pokemon del secondo giocatore)
+        features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))
+
+        #percentuale di tempo in vantaggio (ovvero media dei booleani che indicano il vantaggio => proporzione del vantaggio)
+        features['p1_hp_advantage_mean'] = np.mean(np.array(p1_hp) > np.array(p2_hp))#GRAN BELLA OPZIONE DI CLASSIFICAZIONE POSSIBILE APPLICAZIONE DI EFFETTI DI ETEROGENEITA
+
+        #SUM OF FINAL HP PERCENTAGE OF EACH PLAYER
+        p1_hp_final ={}
+        p2_hp_final ={}
+        for t in timeline:
+            if t.get('p1_pokemon_state'):
+                p1_hp_final[t['p1_pokemon_state']['name']]=t['p1_pokemon_state']['hp_pct']
+            if t.get('p2_pokemon_state'):
+                p2_hp_final[t['p2_pokemon_state']['name']]=t['p2_pokemon_state']['hp_pct']
+        #numero di pokemon usati dal giocatore nei primi 30 turni
+        features['p1_n_pokemon_use'] =len(p1_hp_final.keys())
+        features['p2_n_pokemon_use'] =len(p2_hp_final.keys())
+        #differenza nello schieramento pockemon dopo 30 turni
+        features['diff_final_schieramento']=features['p1_n_pokemon_use']-features['p2_n_pokemon_use']
+        nr_pokemon_sconfitti_p1 = np.sum([1 for e in list(p1_hp_final.values()) if e==0])
+        nr_pokemon_sconfitti_p2 = np.sum([1 for e in list(p2_hp_final.values()) if e==0])
+        features['nr_pokemon_sconfitti_p1'] = nr_pokemon_sconfitti_p1
+        features['nr_pokemon_sconfitti_p2'] = nr_pokemon_sconfitti_p2
+        #CHECK 84.31% (+/- 1.09%) => 84.35% (+/- 1.07%)
+        features['nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1-nr_pokemon_sconfitti_p2
+        #DOVREBBERO ESSERE BOMBA VITA DELLE DUE SQUADRE DOPO I 30 TURNI
+        features['p1_pct_final_hp'] = np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
+        features['p2_pct_final_hp'] = np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys()))
+        #SAREBBE CLAMOROSO NORMALIZZARLA ANCHE IN BASE ALLA DIFFERENZA DI VITA ASSOLUTA DEI POCKEMON LEADER DEI 2 PLAYER
+        
+        diff_final_hp = features['p1_pct_final_hp']-features['p2_pct_final_hp']
+        #83.81% (+/- 0.52%) => 83.89% (+/- 0.55%)
+        features['diff_final_hp'] = diff_final_hp
+
+        #durata battaglia e tasso di perdita degli HP
+        try:
+            dur = battle_duration(battle)
+        except Exception:
+            dur = 0
+        #83.66% (+/- 0.52%) => 83.89% (+/- 0.58%)
+        features["battle_duration"] = dur
+        #83.82% (+/- 0.49%) => 83.89% (+/- 0.55%)
+        features["hp_loss_rate"] = diff_final_hp / dur if dur > 0 else 0.0
+
+        #vedo anche come la salute media evolve nel tempo
+        phases = 3 #early, mid, late game
+        nr_turns = 30 #numero turni
+        slice_idx = nr_turns // phases #slice index must be integer
+        #print("slice_idx: ",slice_idx, "len p1_hp: ",len(p1_hp))
+        features['early_hp_mean_diff'] = np.mean(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
+        #83.94% (+/- 0.46%) => 83.98% (+/- 0.47%)
+        features['late_hp_mean_diff'] = np.mean(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
+
+        hp_delta = np.array(p1_hp) - np.array(p2_hp)
+        features['hp_delta_trend'] = np.polyfit(range(len(hp_delta)), hp_delta, 1)[0]
+        #83.87% (+/- 0.60%) => 83.89% (+/- 0.58%)
+        features['hp_advantage_trend'] = hp_advantage_trend(battle)
+        #fluttuazioni negli hp (andamento della partita: stabile o molto caotica)
+        #restyle RIMOSSO p1_hp_std, p2_hp_std 83.89% (+/- 0.58%) => 83.89% (+/- 0.55%)
+        features['p1_hp_std'] = np.std(p1_hp)
+        features['p2_hp_std'] = np.std(p2_hp)
+        features['hp_delta_std'] = np.std(hp_delta)
+
+        ##STATUS (default nostatus, gli altri sono considerati negativi - i boost sono positivi)
+        p1_status = [t['p1_pokemon_state'].get('status', 'nostatus') for t in timeline if t.get('p1_pokemon_state')]
+        p2_status = [t['p2_pokemon_state'].get('status', 'nostatus') for t in timeline if t.get('p2_pokemon_state')]
+        total_status = set(p1_status + p2_status)
+        no_effect_status = {'nostatus', 'noeffect'}
+        negative_status = {s for s in total_status if s not in no_effect_status}
+        #mean of negative status
+        p1_negative_status_mean = np.mean([s in negative_status for s in p1_status])
+        p2_negative_status_mean = np.mean([s in negative_status for s in p2_status])
+        #status advantage if p1 applied more status to p2 (differenza delle medie dei negativi)
+        features['p1_bad_status_advantage'] = p2_negative_status_mean-p1_negative_status_mean
+        #p1_bad_status_advantage.append(features['p1_bad_status_advantage'])
+        #how many times status changed?
+        # we have to check that first array shifted by 1 is
+        # different from the same array excluding the last element
+        # (so basically checking if status change in time)
+        #somma il nr di volte in cui lo stato cambia, vedi se collineare
+        p1_status_change = np.sum(np.array(p1_status[1:]) != np.array(p1_status[:-1]))
+        p2_status_change = np.sum(np.array(p2_status[1:]) != np.array(p2_status[:-1]))
+        #CHECK 84.31% (+/- 1.09%) =>  BOTH 84.34% (+/- 1.06%)
+        #CHECK 84.31% (+/- 1.09%) =>  84.32% (+/- 1.06%)
+        features['p1_status_change'] = p1_status_change
+        #CHECK 84.31% (+/- 1.09%) => 84.33% (+/- 1.07%)
+        features['p2_status_change'] = p2_status_change
+
+        features['status_change_diff'] = p1_status_change - p2_status_change
+        status_change_diff.append(features['status_change_diff'])
+
+        #QUANTO IL TEAM è BILANCIATO (TIPI E VELOCITA)
+        p1_types = [t for p in p1_team for t in p.get('types', []) if t != 'notype']
+        #84.02% (+/- 0.58%) => 84.03% (+/- 0.57%)
+        features['p1_type_diversity'] = len(set(p1_types))
+        #!!
+        p1_type_resistance = compute_team_resistance(p1_team, type_chart)
+        #83.89% (+/- 0.58%)=>Mean CV accuracy: 83.90% (+/- 0.55%)
+        features['p1_type_resistance'] = p1_type_resistance
+        
+        p1_type_weakness = compute_team_weakness(p1_team, type_chart)
+        features['p1_type_weakness'] = 1/p1_type_weakness
+
+        
+        res = compute_mean_stab_moves(timeline, pokemon_dict)
+        # print(res)
+        # exit()
+        #83.92% (+/- 0.53%) => 83.84% (+/- 0.66%)
+        #CHECK 84.31% (+/- 1.09%) =>  84.34% (+/- 1.10%)
+        features['p1_mean_stab'] = res["p1_mean_stab"]
+        
+        #83.92% (+/- 0.53%) => 83.83% (+/- 0.51%)
+        #CHECK 84.34% (+/- 1.10%) =>  84.38% (+/- 1.11%)
+        features['p2_mean_stab'] = res["p2_mean_stab"]
+
+        #83.92% (+/- 0.53%) => 83.82% (+/- 0.55%)
+        #CHECK 84.38% (+/- 1.11%) =>  84.40% (+/- 1.12%)
+        features['diff_mean_stab'] = res["diff_mean_stab"]
+
+        result = compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart)
+        #CHECK 84.40% (+/- 1.12%) =>  84.35% (+/- 1.01%)
+        features['p1_type_advantage'] = result['p1_type_advantage']
+        #CHECK 84.35% (+/- 1.01%) =>  84.47% (+/- 1.01%)
+        features['p2_type_advantage'] = result['p2_type_advantage']
+        #CHECK 84.47% (+/- 1.01%) =>  84.45% (+/- 1.00%)
+        features['diff_type_advantage'] = result['diff_type_advantage']
+
+        #print("p1_type_vulnerability: ",p1_type_vulnerability)
+        # 83.89% (+/- 0.58%) => 83.85% (+/- 0.50%)
+        #features['p1_type_vulnerability'] = p1_type_vulnerability
+
+
+        MEDIUM_SPEED_THRESHOLD = 90 #medium-speed pokemon
+        HIGH_SPEED_THRESHOLD = 100 #fast pokemon
+        speeds = np.array([p.get('base_spe', 0) for p in p1_team])
+        #restyle RIMOSSO 83.98% (+/- 0.47%) => 84.02% (+/- 0.50%)
+        features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
+        #restyle RIMOSSO 84.02% (+/- 0.50%) => 84.03% (+/- 0.57%)
+        features['p1_avg_high_speed_stat_battaglia'] = np.mean(np.array(speeds) > HIGH_SPEED_THRESHOLD)
+
+
+    ##interaction features
+    #CHECK 84.45% (+/- 1.00%) => 84.44% (+/- 0.99%)
+    features.update(calculate_interaction_features(features))
+    # We also need the ID and the target variable (if it exists)
+    
+    # if is_test and battle_id == 109:
+    #     with open(f"test_battle_{battle_id}_features.json", "w", encoding="utf-8") as f:
+    #         json.dump(features, f, ensure_ascii=False, indent=4, default=default)
+    #     exit()
+    features['battle_id'] = battle_id
+    if 'player_won' in battle:
+        features['player_won'] = int(battle['player_won'])
+
+    
+    return features
+def create_features(data: list[dict]) -> pd.DataFrame:
     feature_list = []
     #p1_bad_status_advantage = []
     status_change_diff = []
@@ -777,458 +1221,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
                     pokemon_dict[name] = set()
                 pokemon_dict[name].update(types)
     for battle in tqdm(data, desc="Extracting features"):
-        battle_id = battle.get("battle_id")#debugging purposes
-        features = {}
-        # --- Player 1 Team Features ---
-        p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
-        p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_spd = p1_lead_spa = 0.0
-        p1_team = battle.get('p1_team_details', [])
-        ####
-        status_features = calculate_status_efficacy_features(battle)
-        #83.97% (+/- 0.40%)=>84.01% (+/- 0.51%)
-        features['p1_major_status_infliction_rate'] = status_features['p1_major_status_infliction_rate']
-        #84.25% (+/- 0.37%) => 84.25% (+/- 0.33%)
-        features['p1_cumulative_major_status_turns_pct'] = status_features['p1_cumulative_major_status_turns_pct']
-        p2_status_features = calculate_p2_status_control_features(battle)
-        features['p2_major_status_infliction_rate'] = p2_status_features['p2_major_status_infliction_rate']
-        features['p2_cumulative_major_status_turns_pct'] = p2_status_features['p2_cumulative_major_status_turns_pct']
-        
-        ###
-        dynamic_boost_features = calculate_dynamic_boost_features(battle)
-        """
-        Mancano 1,2; 1,3
-        1,2,3 NO da 8394
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8428 ± 0.0041 (da 8394 a 8429)
-        It took 104.46463012695312 time
-
-        1
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.1, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8429 ± 0.0046 (da 8408 a 8430)
-        It took 79.87716317176819 time
-        """
-        #features['p1_net_boost_sum'] = dynamic_boost_features['p1_net_boost_sum']
-        """
-        1,2 NO
-        Best params: {'logreg__C': 0.1, 'logreg__l1_ratio': 0.5, 'logreg__penalty': 'elasticnet', 'logreg__solver': 'saga'}
-        Best CV mean: 0.8428 ± 0.0043 (da 8397 a 8426)
-        """
-        """
-        2,3 NO
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0048 (da 8416 a 8451)
-        It took 51.33575224876404 time
-        """
-
-        """
-        2 molto buono
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0042 (da 8419 a 8451)
-        It took 52.9518678188324 time
-        """
-        features['p1_max_offense_boost_diff'] = dynamic_boost_features['p1_max_offense_boost_diff']
-        """
-        3
-        Best CV mean: 0.8428 ± 0.0041 (da 8413 a 8444)
-        It took 284.0617139339447 time
-        """
-        
-        #features['p1_max_speed_boost_diff'] = dynamic_boost_features['p1_max_speed_boost_diff']
-        
-
-        ####
-        """
-        nessuno
-        Best CV mean: 0.8442 ± 0.0041 (da 8419 a 8451)
-
-        1,2
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8434)
-        """
-
-        """
-        1 CHOSEN (improved min, same max, decrease best)
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8427 ± 0.0042 (da 8420 a 8451)
-        """
-
-        """
-        2
-        Fitting 5 folds for each of 34 candidates, totalling 170 fits
-        Best params: {'logreg__C': 30, 'logreg__penalty': 'l2', 'logreg__solver': 'liblinear'}
-        Best CV mean: 0.8434 ± 0.0045 (da 8413 a 8435)
-        """
-        # Integrate Team Coverage (Step 4)
-        #print("calculating p1_team_super_effective_moves")
-        p1_team_super_effective_moves = calculate_team_coverage_features(battle, type_chart)
-        features['p1_team_super_effective_moves'] = p1_team_super_effective_moves['p1_team_super_effective_moves']
-        
-        # Integrate Action Efficiency (Step 5)
-        p1_status_move_rate = calculate_action_efficiency_features(battle)
-        #features['p1_status_move_rate'] = p1_status_move_rate['p1_status_move_rate']
-        ####
-        ##
-        expected_damage_ratio_turn_1 = 0.0
-        try:
-            """
-            0.0
-            4.61512051684126
-            0.8873031950009029
-            -3.7636451046866286
-            """
-            expected_damage_ratio_turn_1 = calculate_expected_damage_ratio_turn_1(battle, type_chart)
-            #print(expected_damage_ratio_turn_1)
-            #83.97% (+/- 0.52%)
-            features['expected_damage_ratio_turn_1'] = expected_damage_ratio_turn_1
-        except Exception:
-            features['expected_damage_ratio_turn_1'] = 0.0
-        ##
-        if p1_team:
-            ####
-            # --- P1 Team Maximum Potential Features ---
-            # Calculate Base Stat Total (BST) for each Pokémon
-            bst_values = []
-            
-            # Collect max offense and max speed across the entire team
-            max_offense = 0
-            max_speed = 0
-
-            for p in p1_team:
-                p_hp = p.get('base_hp', 0)
-                p_atk = p.get('base_atk', 0)
-                p_def = p.get('base_def', 0)
-                p_spa = p.get('base_spa', 0)
-                p_spd = p.get('base_spd', 0)
-                p_spe = p.get('base_spe', 0)
-                
-                # 1. Max Offensive Stat
-                current_offense = max(p_atk, p_spa)
-                max_offense = max(max_offense, current_offense)
-                
-                # 2. Max Speed Stat
-                max_speed = max(max_speed, p_spe)
-                
-                # 3. BST for Variance Calculation
-                bst_values.append(p_hp + p_atk + p_def + p_spa + p_spd + p_spe)
-            #together 83.97% (+/- 0.52%)=>83.91% (+/- 0.44%)
-            features['p1_max_offensive_stat'] = max_offense#83.97% (+/- 0.52%)=>83.97% (+/- 0.40%)
-            #CHECK 84.30% (+/- 1.17%) => 84.31% (+/- 1.09%)
-            features['p1_max_speed_stat'] = max_speed#83.97% (+/- 0.52%)=>83.95% (+/- 0.54%)
-            
-            #3. BST Variance (only calculated if there's more than one Pokémon)
-            #var/std 83.97% (+/- 0.52%)=>83.91% (+/- 0.44%)/83.94% (+/- 0.44%)
-            # if len(bst_values) > 1:
-            #     features['p1_team_bst_variance'] = np.std(bst_values)
-            # else:
-            #     features['p1_team_bst_variance'] = 0.0 # Should be rare for a 6v6 battle
-            ####
-            p1_mean_hp = np.mean([p.get('base_hp', 0) for p in p1_team])
-            p1_mean_spe = np.mean([p.get('base_spe', 0) for p in p1_team])
-            p1_mean_atk = np.mean([p.get('base_atk', 1) for p in p1_team])
-            p1_mean_def = np.mean([p.get('base_def', 0) for p in p1_team])
-            p1_mean_spd = np.mean([p.get('base_spd', 0) for p in p1_team])
-
-            features['p1_mean_hp'] = p1_mean_hp
-            #restyle RIMOSSO 83.89% (+/- 0.55%) => 83.98% (+/- 0.47%)
-            features['p1_mean_spe'] = p1_mean_spe
-            features['p1_mean_atk'] = p1_mean_atk#83.88% (+/- 0.54%)
-            features['p1_mean_def'] = p1_mean_def
-            features['p1_mean_sp'] = p1_mean_spd
-
-            #PER UN CONFRONTO EQUO UTILIZZIAMO SOLO DATI DEL LEADER ANCHE NELLA SQUADRA 1 PER LE DIFFERENZE
-            p1_lead_hp =  p1_team[0].get('base_hp', 0)
-            p1_lead_spe = p1_team[0].get('base_spe', 0)
-            p1_lead_atk = p1_team[0].get('base_atk', 0)
-            p1_lead_def = p1_team[0].get('base_def', 0)
-            p1_lead_spd =  p1_team[0].get('base_spd', 0)
-
-
-        # --- Player 2 Lead Features ---
-        p2_hp = p2_spe = p2_atk = p2_def = p2_spd = 0.0
-        p2_lead = battle.get('p2_lead_details')
-        if p2_lead:
-            
-            # Player 2's lead Pokémon's stats
-            p2_hp = p2_lead.get('base_hp', 0)
-            p2_spe = p2_lead.get('base_spe', 0)
-            p2_atk = p2_lead.get('base_atk', 0)
-            p2_def = p2_lead.get('base_def', 0)
-            p2_spd = p2_lead.get('base_spd', 0)
-
-        # I ADD THE DIFFS/DELTAS
-        features['diff_hp']  = p1_lead_hp  - p2_hp
-        features['diff_spe'] = p1_lead_spe - p2_spe
-        features['diff_atk'] = p1_lead_atk - p2_atk
-        features['diff_def'] = p1_lead_def - p2_def#83.93% (+/- 0.53%) => 83.93% (+/- 0.52%)
-        #CHECK 84.31% (+/- 1.09%) => 84.31% (+/- 1.09%)
-        features['diff_spd'] =  p1_lead_spd - p2_spd#83.93% (+/- 0.53%) => 83.87% (+/- 0.57%)
-        
-        #informazioni dinamiche della battaglia
-        #Chi mantiene più HP medi e conduce più turni spesso vince anche se la battaglia non è ancora finita
-        timeline = battle.get('battle_timeline', [])
-        if timeline:
-            #boost+damage diff
-            # --- Mean attack and defense boosts across timeline ---
-            p1_atk_boosts, p2_atk_boosts, p2_def_boosts, p1_def_boosts = [], [], [], []
-
-            for turn in timeline:
-                p1_boosts = turn.get("p1_pokemon_state", {}).get("boosts", {})
-                p2_boosts = turn.get("p2_pokemon_state", {}).get("boosts", {})
-                p1_atk_boosts.append(p1_boosts.get("atk", 0))
-                p2_atk_boosts.append(p2_boosts.get("atk", 0))
-                p1_def_boosts.append(p1_boosts.get("def", 0))
-                p2_def_boosts.append(p2_boosts.get("def", 0))
-
-            p1_atk_boosts = np.array(p1_atk_boosts)
-            p2_atk_boosts = np.array(p2_atk_boosts)
-            p1_def_boosts = np.array(p1_def_boosts)
-            p2_def_boosts = np.array(p2_def_boosts)
-
-            #priorità delle mosse
-            p1_priorities = []
-            p2_priorities = []
-
-            for turn in timeline:
-                move1 = turn.get("p1_move_details")
-                move2 = turn.get("p2_move_details")
-
-                if isinstance(move1, dict) and move1.get("priority") is not None:
-                    p1_priorities.append(move1["priority"])
-                if isinstance(move2, dict) and move2.get("priority") is not None:
-                    p2_priorities.append(move2["priority"])
-
-            #priorità media per squadra
-            p1_avg_move_priority = np.mean(p1_priorities) if p1_priorities else 0.0
-            p2_avg_move_priority = np.mean(p2_priorities) if p2_priorities else 0.0
-
-            #vantaggio relativo
-            features["priority_diff"] = p1_avg_move_priority - p2_avg_move_priority
-
-            #frazione dei turni in cui p1 ha più priorità
-            if p1_priorities and p2_priorities:
-                min_len = min(len(p1_priorities), len(p2_priorities))
-                higher_priority_turns = sum(p1_priorities[i] > p2_priorities[i] for i in range(min_len))
-                features["priority_rate_advantage"] = higher_priority_turns / max(1, min_len)
-            else:
-                features["priority_rate_advantage"] = 0.0
-
-            #new feature: confronta stat se disponibili
-            #differenza di statistiche nei turni
-            stat_diffs = {
-                "base_atk": [],
-                "base_spa": [],
-                "base_spe": []
-            }
-
-            for t in timeline:
-                p1_state = t.get("p1_pokemon_state", {})
-                p2_state = t.get("p2_pokemon_state", {})
-
-                p1_name = p1_state.get("name")
-                p2_name = p2_state.get("name")
-
-                #base stats
-                p1_stats = get_pokemon_stats(p1_team, p1_name) if p1_name else None
-                p2_stats = None
-
-                # p2: if same as lead, use lead; otherwise, None
-                p2_lead = battle.get("p2_lead_details", {})
-                if p2_name and p2_lead and p2_lead.get("name") == p2_name:
-                    p2_stats = {
-                         "base_hp": p2_lead.get("base_hp", 0),
-                        "base_atk": p2_lead.get("base_atk", 0),
-                         "base_def": p2_lead.get("base_def", 0),
-                        "base_spa": p2_lead.get("base_spa", 0),
-                         "base_spd": p2_lead.get("base_spd", 0),
-                        "base_spe": p2_lead.get("base_spe", 0)
-                    }
-
-                #salto i turni se non ho le stati di uno dei 2 pokemon che si affrontano
-                if not p1_stats or not p2_stats:
-                    continue
-
-                #diff
-                for stat in stat_diffs.keys():
-                    diff = p1_stats[stat] - p2_stats[stat]
-                    stat_diffs[stat].append(diff)
-
-            #aggrego le differenze di statistiche nella timeline
-            for stat, diffs in stat_diffs.items():
-                if diffs:
-                    features[f"mean_{stat}_diff_timeline"] = np.mean(diffs)#83.74=>83.87
-                    features[f"std_{stat}_diff_timeline"] = np.std(diffs)#83.78=>83.87
-                else:
-                    features[f"mean_{stat}_diff_timeline"] = 0.0
-                    features[f"std_{stat}_diff_timeline"] = 0.0
-            #SALUTE
-            p1_hp = [t['p1_pokemon_state']['hp_pct'] for t in timeline if t.get('p1_pokemon_state')]
-            p2_hp = [t['p2_pokemon_state']['hp_pct'] for t in timeline if t.get('p2_pokemon_state')]
-            #vantaggio medio in salute (media della differenza tra la salute dei pokemon del primo giocatore e quella dei pokemon del secondo giocatore)
-            features['hp_diff_mean'] = np.mean(np.array(p1_hp) - np.array(p2_hp))
-
-            #percentuale di tempo in vantaggio (ovvero media dei booleani che indicano il vantaggio => proporzione del vantaggio)
-            features['p1_hp_advantage_mean'] = np.mean(np.array(p1_hp) > np.array(p2_hp))#GRAN BELLA OPZIONE DI CLASSIFICAZIONE POSSIBILE APPLICAZIONE DI EFFETTI DI ETEROGENEITA
-
-            #SUM OF FINAL HP PERCENTAGE OF EACH PLAYER
-            p1_hp_final ={}
-            p2_hp_final ={}
-            for t in timeline:
-                if t.get('p1_pokemon_state'):
-                    p1_hp_final[t['p1_pokemon_state']['name']]=t['p1_pokemon_state']['hp_pct']
-                if t.get('p2_pokemon_state'):
-                    p2_hp_final[t['p2_pokemon_state']['name']]=t['p2_pokemon_state']['hp_pct']
-            #numero di pokemon usati dal giocatore nei primi 30 turni
-            features['p1_n_pokemon_use'] =len(p1_hp_final.keys())
-            features['p2_n_pokemon_use'] =len(p2_hp_final.keys())
-            #differenza nello schieramento pockemon dopo 30 turni
-            features['diff_final_schieramento']=features['p1_n_pokemon_use']-features['p2_n_pokemon_use']
-            nr_pokemon_sconfitti_p1 = np.sum([1 for e in list(p1_hp_final.values()) if e==0])
-            nr_pokemon_sconfitti_p2 = np.sum([1 for e in list(p2_hp_final.values()) if e==0])
-            features['nr_pokemon_sconfitti_p1'] = nr_pokemon_sconfitti_p1
-            features['nr_pokemon_sconfitti_p2'] = nr_pokemon_sconfitti_p2
-            #CHECK 84.31% (+/- 1.09%) => 84.35% (+/- 1.07%)
-            features['nr_pokemon_sconfitti_diff'] = nr_pokemon_sconfitti_p1-nr_pokemon_sconfitti_p2
-            #DOVREBBERO ESSERE BOMBA VITA DELLE DUE SQUADRE DOPO I 30 TURNI
-            features['p1_pct_final_hp'] = np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys()))
-            # if is_test and battle_id == 109:
-            #     print(p1_hp_final)
-            #     print("len ks: ",len(p1_hp_final.keys()))
-            #     print("6-len ks: ",6-len(p1_hp_final.keys()))
-            #     print("res: ",np.sum(list(p1_hp_final.values()))+(6-len(p1_hp_final.keys())))
-            #     print("debug: ",np.sum(list(p2_hp_final.values())),6-len(p2_hp_final.keys()),
-            #           np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys())))
-            #     exit()
-            features['p2_pct_final_hp'] = np.sum(list(p2_hp_final.values()))+(6-len(p2_hp_final.keys()))
-            #SAREBBE CLAMOROSO NORMALIZZARLA ANCHE IN BASE ALLA DIFFERENZA DI VITA ASSOLUTA DEI POCKEMON LEADER DEI 2 PLAYER
-            
-            diff_final_hp = features['p1_pct_final_hp']-features['p2_pct_final_hp']
-            #83.81% (+/- 0.52%) => 83.89% (+/- 0.55%)
-            features['diff_final_hp'] = diff_final_hp
-
-            #durata battaglia e tasso di perdita degli HP
-            try:
-                dur = battle_duration(battle)
-            except Exception:
-                dur = 0
-            #83.66% (+/- 0.52%) => 83.89% (+/- 0.58%)
-            features["battle_duration"] = dur
-            #83.82% (+/- 0.49%) => 83.89% (+/- 0.55%)
-            features["hp_loss_rate"] = diff_final_hp / dur if dur > 0 else 0.0
-
-            #vedo anche come la salute media evolve nel tempo
-            phases = 3 #early, mid, late game
-            nr_turns = 30 #numero turni
-            slice_idx = nr_turns // phases #slice index must be integer
-            #print("slice_idx: ",slice_idx, "len p1_hp: ",len(p1_hp))
-            features['early_hp_mean_diff'] = np.mean(np.array(p1_hp[:slice_idx]) - np.array(p2_hp[:slice_idx]))
-            #83.94% (+/- 0.46%) => 83.98% (+/- 0.47%)
-            features['late_hp_mean_diff'] = np.mean(np.array(p1_hp[-slice_idx:]) - np.array(p2_hp[-slice_idx:]))
-
-            hp_delta = np.array(p1_hp) - np.array(p2_hp)
-            features['hp_delta_trend'] = np.polyfit(range(len(hp_delta)), hp_delta, 1)[0]
-            #83.87% (+/- 0.60%) => 83.89% (+/- 0.58%)
-            features['hp_advantage_trend'] = hp_advantage_trend(battle)
-            #fluttuazioni negli hp (andamento della partita: stabile o molto caotica)
-            #restyle RIMOSSO p1_hp_std, p2_hp_std 83.89% (+/- 0.58%) => 83.89% (+/- 0.55%)
-            features['p1_hp_std'] = np.std(p1_hp)
-            features['p2_hp_std'] = np.std(p2_hp)
-            features['hp_delta_std'] = np.std(hp_delta)
-
-            ##STATUS (default nostatus, gli altri sono considerati negativi - i boost sono positivi)
-            p1_status = [t['p1_pokemon_state'].get('status', 'nostatus') for t in timeline if t.get('p1_pokemon_state')]
-            p2_status = [t['p2_pokemon_state'].get('status', 'nostatus') for t in timeline if t.get('p2_pokemon_state')]
-            total_status = set(p1_status + p2_status)
-            no_effect_status = {'nostatus', 'noeffect'}
-            negative_status = {s for s in total_status if s not in no_effect_status}
-            #mean of negative status
-            p1_negative_status_mean = np.mean([s in negative_status for s in p1_status])
-            p2_negative_status_mean = np.mean([s in negative_status for s in p2_status])
-            #status advantage if p1 applied more status to p2 (differenza delle medie dei negativi)
-            features['p1_bad_status_advantage'] = p2_negative_status_mean-p1_negative_status_mean
-            #p1_bad_status_advantage.append(features['p1_bad_status_advantage'])
-            #how many times status changed?
-            # we have to check that first array shifted by 1 is
-            # different from the same array excluding the last element
-            # (so basically checking if status change in time)
-            #somma il nr di volte in cui lo stato cambia, vedi se collineare
-            p1_status_change = np.sum(np.array(p1_status[1:]) != np.array(p1_status[:-1]))
-            p2_status_change = np.sum(np.array(p2_status[1:]) != np.array(p2_status[:-1]))
-            #CHECK 84.31% (+/- 1.09%) =>  BOTH 84.34% (+/- 1.06%)
-            #CHECK 84.31% (+/- 1.09%) =>  84.32% (+/- 1.06%)
-            features['p1_status_change'] = p1_status_change
-            #CHECK 84.31% (+/- 1.09%) => 84.33% (+/- 1.07%)
-            features['p2_status_change'] = p2_status_change
-
-            features['status_change_diff'] = p1_status_change - p2_status_change
-            status_change_diff.append(features['status_change_diff'])
-
-            #QUANTO IL TEAM è BILANCIATO (TIPI E VELOCITA)
-            p1_types = [t for p in p1_team for t in p.get('types', []) if t != 'notype']
-            #84.02% (+/- 0.58%) => 84.03% (+/- 0.57%)
-            features['p1_type_diversity'] = len(set(p1_types))
-            #!!
-            p1_type_resistance = compute_team_resistance(p1_team, type_chart)
-            #83.89% (+/- 0.58%)=>Mean CV accuracy: 83.90% (+/- 0.55%)
-            features['p1_type_resistance'] = p1_type_resistance
-            
-            p1_type_weakness = compute_team_weakness(p1_team, type_chart)
-            features['p1_type_weakness'] = 1/p1_type_weakness
-
-            
-            res = compute_mean_stab_moves(timeline, pokemon_dict)
-            # print(res)
-            # exit()
-            #83.92% (+/- 0.53%) => 83.84% (+/- 0.66%)
-            #CHECK 84.31% (+/- 1.09%) =>  84.34% (+/- 1.10%)
-            features['p1_mean_stab'] = res["p1_mean_stab"]
-            
-            #83.92% (+/- 0.53%) => 83.83% (+/- 0.51%)
-            #CHECK 84.34% (+/- 1.10%) =>  84.38% (+/- 1.11%)
-            features['p2_mean_stab'] = res["p2_mean_stab"]
-
-            #83.92% (+/- 0.53%) => 83.82% (+/- 0.55%)
-            #CHECK 84.38% (+/- 1.11%) =>  84.40% (+/- 1.12%)
-            features['diff_mean_stab'] = res["diff_mean_stab"]
-
-            result = compute_avg_type_advantage_over_timeline(timeline, pokemon_dict, type_chart, is_test, battle_id)
-            #CHECK 84.40% (+/- 1.12%) =>  84.35% (+/- 1.01%)
-            features['p1_type_advantage'] = result['p1_type_advantage']
-            #CHECK 84.35% (+/- 1.01%) =>  84.47% (+/- 1.01%)
-            features['p2_type_advantage'] = result['p2_type_advantage']
-            #CHECK 84.47% (+/- 1.01%) =>  84.45% (+/- 1.00%)
-            features['diff_type_advantage'] = result['diff_type_advantage']
-
-            #print("p1_type_vulnerability: ",p1_type_vulnerability)
-            # 83.89% (+/- 0.58%) => 83.85% (+/- 0.50%)
-            #features['p1_type_vulnerability'] = p1_type_vulnerability
-
-
-            MEDIUM_SPEED_THRESHOLD = 90 #medium-speed pokemon
-            HIGH_SPEED_THRESHOLD = 100 #fast pokemon
-            speeds = np.array([p.get('base_spe', 0) for p in p1_team])
-            #restyle RIMOSSO 83.98% (+/- 0.47%) => 84.02% (+/- 0.50%)
-            features['p1_avg_speed_stat_battaglia'] = np.mean(np.array(speeds) > MEDIUM_SPEED_THRESHOLD)
-            #restyle RIMOSSO 84.02% (+/- 0.50%) => 84.03% (+/- 0.57%)
-            features['p1_avg_high_speed_stat_battaglia'] = np.mean(np.array(speeds) > HIGH_SPEED_THRESHOLD)
-
-
-        ##interaction features
-        #CHECK 84.45% (+/- 1.00%) => 84.44% (+/- 0.99%)
-        features.update(calculate_interaction_features(features))
-        # We also need the ID and the target variable (if it exists)
-        
-        # if is_test and battle_id == 109:
-        #     with open(f"test_battle_{battle_id}_features.json", "w", encoding="utf-8") as f:
-        #         json.dump(features, f, ensure_ascii=False, indent=4, default=default)
-        #     exit()
-        features['battle_id'] = battle_id
-        if 'player_won' in battle:
-            features['player_won'] = int(battle['player_won'])
-
+        features = create_feature_instance(battle, pokemon_dict, status_change_diff)
         feature_list.append(features)
     #print("pokemon_dict: ",pokemon_dict, len(pokemon_dict), "len data: ",len(data))
     #exit()

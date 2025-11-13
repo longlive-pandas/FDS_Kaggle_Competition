@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Counter
 from typing import Any, Dict, Iterable, List, Tuple
-from start_utils import predict_and_submit
+from start_utils import predict_and_submit, create_feature_instance
 
 STAT_FIELDS = ["base_hp", "base_atk", "base_def", "base_spa", "base_spd", "base_spe"]
 
@@ -782,7 +782,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
     for battle in tqdm(data, desc="Extracting features"):
         battle_id = battle.get("battle_id")
         features = {}
-        
+        features.update(create_feature_instance(battle, pokemon_dict, []))
         features['battle_id'] = battle_id
         if 'player_won' in battle:
             features['player_won'] = int(battle['player_won'])
@@ -1043,9 +1043,18 @@ if FINAL_VOTING:
     # Assumi che X, y siano già caricati
 
     model, features, importance_table = train_with_feature_selection(
-        X, y, k=50
+        X, y, k=80
     )
+    X_reduced = X[features]
+    def correlation_pruning(X, threshold=0.90):
+        corr = X.corr().abs()
+        upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
 
+        to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
+        print(f"Dropped {len(to_drop)} correlated features (>{threshold}).")
+
+        return [f for f in X.columns if f not in to_drop]
+    features = correlation_pruning(X_reduced, threshold=0.92)
     print("\nModello finale pronto!")
 
 elif NEW_VOTING:
