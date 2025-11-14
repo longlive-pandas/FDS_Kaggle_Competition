@@ -1,0 +1,19 @@
+"""
+['diff_final_hp', 'diff_final_schieramento', 'p2_n_pokemon_use', 'hp_delta_std', 'battle_duration', 'hp_diff_mean', 'p2_pct_final_hp', 'p1_hp_std', 'p1_type_advantage', 'net_major_status_infliction', 'mean_base_spe_diff_timeline', 'p1_hp_advantage_mean', 'early_hp_mean_diff', 'p1_bad_status_advantage', 'p2_hp_std', 'mean_base_spa_diff_timeline', 'diff_speed_timeline', 'nr_pokemon_sconfitti_p2', 'boost_p2', 'status_p1', 'diff_effective_offense', 'priority_diff', 'p1_cumulative_major_status_turns_pct', 'boost_p1', 'p2_move_power_weighted', 'p1_team_base_atk_std', 'p1_move_power_weighted', 'p1_team_base_spa_std', 'p1_pct_final_hp', 'diff_hp', 'nr_pokemon_sconfitti_diff', 'p1_number_status', 'diff_number_status', 'diff_stat_mean', 'p1_mean_atk', 'status_p2', 'late_hp_mean_diff', 'hp_delta_trend', 'diff_turn_first_boost', 'net_major_status_suffering', 'p1_type_resistance', 'p1_major_status_infliction_rate', 'p2_hp_pct_sum', 'p1_mean_stab', 'p1_mean_hp', 'diff_spd', 'p1_mean_sp', 'p2_cumulative_major_status_turns_pct', 'diff_type_advantage', 'p1_number_attacks', 'std_base_spa_diff_timeline', 'p2_confusion_freq', 'std_base_atk_diff_timeline', 'p2_type_advantage', 'p2_major_status_infliction_rate', 'p1_reflect_first_turn', 'std_base_spe_diff_timeline', 'p2_number_status', 'expected_damage_ratio_turn_1', 'p1_mean_spe', 'p1_team_base_def_std', 'diff_stat_lead', 'p2_status_change', 'p1_team_base_spe_std', 'p2_lead_base_spa', 'p1_mean_def', 'p1_team_base_hp_std', 'p2_mean_stab', 'diff_spe', 'p1_final_hp_per_ko', 'p1_type_diversity', 'diff_number_attack', 'diff_boost_count_turni', 'p1_team_base_def_max', 'diff_def', 'mean_base_atk_diff_timeline'],
+[9sec-76feat]
+0.8799->0.8431 ± 0.0082, 0.9532002800000001->0.9135 ± 0.0067
+
+senza create_feature_instance
+['diff_hp_pct', 'p1_hp_pct_sum', 'p2_number_status', 'diff_number_status', 'major_status_p1', 'diff_status', 'p1_type_advantage', 'diff_speed_timeline', 'p2_move_power_weighted', 'major_status_p2', 'p2_hp_pct_sum', 'hp_advantage_trend', 'p2_number_attacks', 'boost_p2', 'status_p1', 'p1_team_base_spe_mean', 'diff_effective_offense', 'p1_team_base_hp_mean', 'p1_team_base_atk_std', 'diff_negative_priority', 'p1_move_power_weighted', 'p1_number_status', 'boost_p1', 'diff_stat_mean', 'p2_type_advantage', 'major_status_diff', 'p1_team_base_atk_mean', 'diff_type_advantage', 'status_p2', 'p2_reflect_freq', 'p1_team_base_spa_mean', 'p1_team_base_spa_std', 'diff_stat_lead', 'p2_confusion_freq', 'diff_turn_first_boost', 'p1_team_base_spe_std', 'diff_number_attack', 'diff_lead_base_hp', 'diff_lead_base_spa', 'p1_team_base_hp_std', 'p2_lead_base_spa', 'p1_team_base_def_mean', 'diff_boost_count_turni', 'p1_team_base_def_std', 'diff_lead_base_def', 'p1_sum_negative_priority', 'p1_number_attacks', 'p1_confusion_first_turn', 'diff_lead_base_atk', 'p2_sum_negative_priority', 'p1_reflect_first_turn', 'sum_stat_lead_p1', 'diff_lead_base_spe', 'p1_substitute_first_turn', 'diff_boost_last_turn', 'p1_reflect_freq', 'p1_team_base_def_max', 'p1_team_base_spa_min', 'p2_lead_base_spe', 'p1_team_base_spe_max', 'p2_reflect_first_turn', 'p1_is_faster_effective', 'p2_substitute_first_turn', 'p2_lead_base_hp', 'p2_confusion_first_turn', 'p2_lead_base_atk', 'p2_lead_base_def', 'p1_team_base_atk_max', 'p1_team_base_hp_min', 'p1_confusion_freq', 'p1_team_base_spa_max', 'diff_boost_spe_last_turn'],
+[7sec-72feat]
+0.8676->0.8324 ± 0.0089, 0.9421259200000001->0.9043 ± 0.0060
+
+
+Pure Logistic
+Best params: {'logreg__C': 0.01, 'logreg__penalty': 'l2', 'logreg__solver': 'lbfgs'}
+Best CV mean: 0.8428 ± 0.0050
+
+Logistic with features of voting after cleaning and pruning
+Best params: {'logreg__C': 10, 'logreg__penalty': 'l2', 'logreg__solver': 'lbfgs'}
+Best CV mean: 0.8433 ± 0.0054
+"""
