@@ -40,6 +40,16 @@ import os
 import random
 import time
 from typing import Dict, Any
+import logging
+
+###############################################################################
+###############################################################################
+logging.basicConfig(
+    filename='classification.log',
+    filemode='w',            
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 start_time = time.time()
 STAT_FIELDS = ["base_hp", "base_atk", "base_def", "base_spa", "base_spd", "base_spe"]
 type_chart = {
@@ -62,6 +72,21 @@ type_chart = {
     "STEEL":      {"FIRE":0.5, "WATER":0.5, "ELECTRIC":0.5, "ICE":2.0, "ROCK":2.0, "STEEL":0.5, "FAIRY":2.0},
     "FAIRY":      {"FIRE":0.5, "FIGHTING":2.0, "POISON":0.5, "DRAGON":2.0, "DARK":2.0, "STEEL":0.5}
 }
+BOOST_MULT = {
+    -6: 2/8, -5: 2/7, -4: 2/6, -3: 2/5, -2: 2/4, -1: 2/3,
+     0: 1.0,
+     1: 1.5,  2: 2.0,  3: 2.5,  4: 3.0,  5: 3.5,  6: 4.0
+}
+#12
+important_effects = [
+    "substitute", "reflect", "light_screen",
+    "leech_seed", "bind", "wrap", "clamp",
+    "confusion", "toxic", "poison", "burn", "paralysis"
+]
+
+###############################################################################
+###############################################################################
+
 def read_train_data(train_file_path):
     train_data = []
     try:
@@ -79,12 +104,20 @@ def read_test_data(test_file_path):
         for line in f:
             test_data.append(json.loads(line))
     return test_data
+
+
+###############################################################################
+###############################################################################
+
 COMPETITION_NAME = "fds-pokemon-battles-prediction-2025"
 DATA_PATH = os.path.join("input", COMPETITION_NAME)
 train_file_path = os.path.join(DATA_PATH, "train.jsonl")
 test_file_path = os.path.join(DATA_PATH, "test.jsonl")
 train_data = read_train_data(train_file_path)
 test_data = read_test_data(test_file_path)
+
+###############################################################################
+###############################################################################
 ######FEATURES UTILITIES/HELPERS
 def calculate_interaction_features(features):
     """
@@ -111,8 +144,6 @@ def calculate_interaction_features(features):
         "p1_max_speed_offense_product": p1_max_spe * p1_max_off,
         "p1_final_hp_per_ko": p1_final_hp / (p1_ko_count + 1)
     }
-
-
 def compute_status_features(timeline):
     """
     Unifica:
@@ -173,6 +204,9 @@ def compute_status_features(timeline):
     p1_major_suffer = 0
     p2_major_suffer = 0
 
+    # ------------------------------------------------------
+    #        SINGLE PASS SCAN
+    # ------------------------------------------------------
     for turn in timeline:
         # === P1 ===
         p1_state = turn.get("p1_pokemon_state", {})
@@ -215,6 +249,11 @@ def compute_status_features(timeline):
                     p2_success += 1
 
     total_turns = len(timeline)
+
+    # ------------------------------------------------------
+    # Compute derived features
+    # ------------------------------------------------------
+
     # Status changes
     p1_status_change = int(np.sum(np.array(p1_status_list[1:]) != np.array(p1_status_list[:-1])))
     p2_status_change = int(np.sum(np.array(p2_status_list[1:]) != np.array(p2_status_list[:-1])))
@@ -234,6 +273,9 @@ def compute_status_features(timeline):
     p1_cumulative_pct = p1_major_suffer / total_turns
     p2_cumulative_pct = p2_major_suffer / total_turns
 
+    # ------------------------------------------------------
+    # Return unified result
+    # ------------------------------------------------------
     return {
         # Basic counts
         "status_p1": status_count_p1,
@@ -258,8 +300,6 @@ def compute_status_features(timeline):
         "p2_major_status_infliction_rate": p2_infliction_rate,
         "p2_cumulative_major_status_turns_pct": p2_cumulative_pct,
     }
-
-
 def get_type_multiplier(move_type: str, defender_types: list, type_chart: dict) -> float:
     """Calculates the combined type effectiveness multiplier."""
     if not defender_types or move_type.upper() == "NOTYPE":
@@ -318,7 +358,6 @@ def calculate_action_efficiency_features(battle: Dict[str, Any]) -> Dict[str, fl
         features["p1_status_move_rate"] = 0.0
         
     return features
-
 def get_pokemon_stats(team, name):
     for p in team:
         if p.get("name") == name:
@@ -371,7 +410,6 @@ def compute_mean_stab_moves(timeline, pokemon_dict):
         "p2_mean_stab": p2_mean_stab,
         "diff_mean_stab": p1_mean_stab - p2_mean_stab
     }
-
 def compute_avg_offensive_potential(timeline, pokemon_dict):
     if not timeline:
         return {
@@ -444,34 +482,29 @@ def compute_statistics(values: Iterable[float], prefix: str) -> Dict[str, float]
         f"{prefix}_min": float(arr.min()),
         f"{prefix}_max": float(arr.max()),
     }
-def extract_full_hp_features(timeline, battle, team_size=6):
-    
-    if not timeline or len(timeline) < 3:
+def extract_full_hp_features(timeline, team_size=6):
+    if not timeline:
         # fallback per battaglie vuote
         return {k: 0.0 for k in [
-            "hp_advantage_score",
+            "hp_diff_mean", "p1_hp_advantage_mean",
             "p1_n_pokemon_use", "p2_n_pokemon_use",
             "diff_final_schieramento", "nr_pokemon_sconfitti_p1",
             "nr_pokemon_sconfitti_p2", "nr_pokemon_sconfitti_diff",
             "p1_pct_final_hp", "p2_pct_final_hp", "diff_final_hp",
-            "battle_duration", 
+            "battle_duration", "hp_loss_rate",
             "early_hp_mean_diff", "late_hp_mean_diff",
             "hp_delta_trend", "p1_hp_std", "p2_hp_std", "hp_delta_std",
             "hp_volatility", "momentum_shift", "p1_momentum_phases"
         ]}
-    """Cattura i trend di vantaggio durante la battaglia"""
+
     hp_deltas = [t["p1_pokemon_state"]["hp_pct"] - t["p2_pokemon_state"]["hp_pct"] 
                  for t in timeline]
     
     # Conta i cambi di segno (shift di momentum)
     momentum_shifts = sum(1 for i in range(1, len(hp_deltas)) 
                          if hp_deltas[i] * hp_deltas[i-1] < 0)
-    
     # Fasi di vantaggio P1
     p1_advantage_phases = sum(1 for delta in hp_deltas if delta > 10)
-    # ================================
-    # HP arrays per turno
-    # ================================
     p1_hp = [t["p1_pokemon_state"]["hp_pct"] for t in timeline if t.get("p1_pokemon_state")]
     p2_hp = [t["p2_pokemon_state"]["hp_pct"] for t in timeline if t.get("p2_pokemon_state")]
 
@@ -526,6 +559,7 @@ def extract_full_hp_features(timeline, battle, team_size=6):
     except:
         duration = len(timeline)
 
+    hp_loss_rate = diff_final_hp / duration if duration > 0 else 0.0
 
     # ================================
     # Early / Late game HP differences
@@ -551,7 +585,8 @@ def extract_full_hp_features(timeline, battle, team_size=6):
     hp_delta_std = float(np.std(hp_delta))
 
     return {
-        "hp_advantage_score": hp_diff_mean * (1 + p1_hp_advantage_mean),
+        "hp_diff_mean": hp_diff_mean,
+        "p1_hp_advantage_mean": p1_hp_advantage_mean,
 
         "p1_n_pokemon_use": p1_n_pokemon_use,
         "p2_n_pokemon_use": p2_n_pokemon_use,
@@ -566,6 +601,7 @@ def extract_full_hp_features(timeline, battle, team_size=6):
         "diff_final_hp": diff_final_hp,
 
         "battle_duration": duration,
+        "hp_loss_rate": hp_loss_rate,
 
         "early_hp_mean_diff": early_hp_mean_diff,
         "late_hp_mean_diff":  late_hp_mean_diff,
@@ -578,17 +614,6 @@ def extract_full_hp_features(timeline, battle, team_size=6):
         "p1_momentum_phases": p1_advantage_phases,
         "hp_volatility": np.std(np.diff(hp_deltas)) if len(hp_deltas) > 1 else 0
     }
-
-def compute_first_hit_feature(timeline):
-    for turn in timeline:
-        p1 = turn.get("p1_move_details")
-        p2 = turn.get("p2_move_details")
-        if p1 and p1.get("base_power", 0) > 0:
-            return 1
-        if p2 and p2.get("base_power", 0) > 0:
-            return 0
-    return 0
-#MOVES
 def get_full_move_features(timeline):
     p1_move_power_weighted = []
     p2_move_power_weighted = []
@@ -668,7 +693,7 @@ def get_full_move_features(timeline):
     else:
         priority_diff = 0.0
         priority_rate_advantage = 0.0
-    p1_hit_first = compute_first_hit_feature(timeline)
+
     return {
         "p1_move_power_weighted": np.sum(p1_move_power_weighted),
         "p1_number_attacks": p1_number_attacks,
@@ -685,27 +710,15 @@ def get_full_move_features(timeline):
         "p2_sum_negative_priority": p2_sum_negative_priority,
         "diff_negative_priority": p1_sum_negative_priority - p2_sum_negative_priority,
 
+        # Integrated priority metrics
         "priority_diff": priority_diff,
         "priority_rate_advantage": priority_rate_advantage,
-
-        #"p1_hit_first": p1_hit_first
     }
-
-BOOST_MULT = {
-    -6: 2/8, -5: 2/7, -4: 2/6, -3: 2/5, -2: 2/4, -1: 2/3,
-     0: 1.0,
-     1: 1.5,  2: 2.0,  3: 2.5,  4: 3.0,  5: 3.5,  6: 4.0
-}
-
-#Output: {"p1_hp_pct_sum": 2.0, "p2_hp_pct_sum": 1.9, "diff_hp_pct": 0.1}
-import random
-
 def shuffle_dict(d, seed=1234):
     rnd = random.Random(seed)       # generatore deterministico
     items = list(d.items())
     rnd.shuffle(items)              # shuffle riproducibile
     return dict(items)
-
 def create_pokemon_dict(data):
     pokemon_dict = {}
     for battle in data:
@@ -726,7 +739,24 @@ def create_pokemon_dict(data):
                     pokemon_dict[name] = set()
                 pokemon_dict[name].update(types)
     return pokemon_dict
+def build_pokedex(data):
+    """Aggregate base stats for every Pokemon observed in the dataset."""
+    pokedex = {}
 
+    def register_pokemon(pokemon):
+        if not pokemon:
+            return
+        name = (pokemon.get("name") or "").lower()
+        if not name:
+            return
+        pokedex[name] = {stat: pokemon.get(stat, 0) for stat in STAT_FIELDS}
+
+    for battle in data:
+        for member in battle.get("p1_team_details", []):
+            register_pokemon(member)
+        p2_lead = battle.get("p2_lead_details")
+        register_pokemon(p2_lead)
+    return pokedex
 def compute_static_stats_features(battle):
     p1_mean_hp = p1_mean_spe = p1_mean_atk = p1_mean_def = p1_mean_spd = p1_mean_spa = 0.0
     p1_lead_hp = p1_lead_spe = p1_lead_atk = p1_lead_def = p1_lead_spd = p1_lead_spa = 0.0
@@ -781,7 +811,6 @@ def compute_static_stats_features(battle):
     features["diff_def"] = p1_lead_def - p2_def
     features["diff_spd"] =  p1_lead_spd - p2_spd
     return features
-
 def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
     if not timeline:
         return {
@@ -804,6 +833,9 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
             "p1_is_faster_effective": 0,
         }
 
+    # ----------------------------------------------------------
+    # Init
+    # ----------------------------------------------------------
     offense_boost_diff_list = []
     sum_boost_p1 = 0
     sum_boost_p2 = 0
@@ -816,6 +848,9 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
     last_b1 = None
     last_b2 = None
 
+    # ----------------------------------------------------------
+    # SINGLE SCAN OF TIMELINE
+    # ----------------------------------------------------------
     for entry in timeline:
         turn = entry.get("turn", None)
         b1 = entry.get("p1_pokemon_state", {}).get("boosts", {})
@@ -851,6 +886,9 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
     if last_b2 is None:
         last_b2 = {"atk":0,"def":0,"spa":0,"spd":0,"spe":0}
 
+    # ----------------------------------------------------------
+    # LAST TURN DIFFS
+    # ----------------------------------------------------------
     diff_atk = last_b1["atk"] - last_b2["atk"]
     diff_def = last_b1["def"] - last_b2["def"]
     diff_spa = last_b1["spa"] - last_b2["spa"]
@@ -859,6 +897,9 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
 
     diff_total = sum(last_b1.values()) - sum(last_b2.values())
 
+    # ----------------------------------------------------------
+    # EFFECTIVE STATS (only if base stats provided)
+    # ----------------------------------------------------------
     diff_eff_off = 0
     diff_eff_def = 0
     p1_is_faster_effective = 0
@@ -905,11 +946,6 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
         "p1_is_faster_effective": p1_is_faster_effective,
     }
 def compute_effect_features(timeline):
-    important_effects = [
-        "substitute", "reflect", "light_screen",
-        "leech_seed", "bind", "wrap", "clamp",
-        "confusion", "toxic", "poison", "burn", "paralysis"
-    ]
     freq = {
         "p1": {eff: 0 for eff in important_effects},
         "p2": {eff: 0 for eff in important_effects},
@@ -918,8 +954,11 @@ def compute_effect_features(timeline):
         "p1": {eff: None for eff in important_effects},
         "p2": {eff: None for eff in important_effects},
     }
+
+    # ---- SINGLE PASS ----
     for entry in timeline:
         turn = entry.get("turn", None)
+
         for prefix, state_key in (("p1", "p1_pokemon_state"), ("p2", "p2_pokemon_state")):
             state = entry.get(state_key, {})
             effects = state.get("effects", [])
@@ -929,10 +968,14 @@ def compute_effect_features(timeline):
                     freq[prefix][eff] += 1
                     if first_turn[prefix][eff] is None:
                         first_turn[prefix][eff] = turn
+
+    # replace None with 31
     for prefix in ("p1", "p2"):
         for eff in important_effects:
             if first_turn[prefix][eff] is None:
                 first_turn[prefix][eff] = 31
+
+    # ---- flatten result in feature dict ----
     out = {}
     for prefix in ("p1", "p2"):
         for eff in important_effects:
@@ -963,7 +1006,9 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
         p1_expected_damage = 0.0
         p2_expected_damage = 0.0
 
+        # -----------------------------
         # P1 damage on P2
+        # -----------------------------
         if p1_move and p1_move.get("category") in ["SPECIAL", "PHYSICAL"]:
             base_power = p1_move.get("base_power", 0)
             move_type = p1_move.get("type", "").upper()
@@ -979,7 +1024,9 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
             m = get_type_multiplier(move_type, p2_defender_types, type_chart)
             p1_expected_damage = base_power * (att / dfn) * m
 
+        # -----------------------------
         # P2 damage on P1
+        # -----------------------------
         if p2_move and p2_move.get("category") in ["SPECIAL", "PHYSICAL"]:
             base_power = p2_move.get("base_power", 0)
             move_type = p2_move.get("type", "").upper()
@@ -995,7 +1042,9 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
             m = get_type_multiplier(move_type, p1_defender_types, type_chart)
             p2_expected_damage = base_power * (att / dfn) * m
 
+        # -----------------------------
         # Log-smoothed advantage
+        # -----------------------------
         p1_smooth = p1_expected_damage + 1.0
         p2_smooth = p2_expected_damage + 1.0
 
@@ -1004,8 +1053,7 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
     except Exception:
         # Qualsiasi errore → fallback sicuro
         return 0.0
-
-def extract_dynamic_stat_diffs(timeline, p1_team, battle):
+def extract_dynamic_stat_diffs(timeline, p1_team, pokedex):
     MEDIUM_SPEED_THRESHOLD = 90   # medium-speed Pokémon
     HIGH_SPEED_THRESHOLD = 100    # high-speed Pokémon
 
@@ -1018,41 +1066,29 @@ def extract_dynamic_stat_diffs(timeline, p1_team, battle):
     p1_avg_high_speed_stat_battaglia = float(np.mean(speeds > HIGH_SPEED_THRESHOLD))
 
     # ====================================================
-    # 2) DYNAMIC STAT DIFFERENCES P1 ACTIVE VS P2 LEAD
+    # 2) DYNAMIC STAT DIFFERENCES P1 ACTIVE VS P2
     # ====================================================
     stat_keys = ["base_atk", "base_spa", "base_spe"]
     stat_diffs = {k: [] for k in stat_keys}
-
-    p2_lead = battle.get("p2_lead_details", {})
 
     for t in timeline:
         p1_state = t.get("p1_pokemon_state", {})
         p2_state = t.get("p2_pokemon_state", {})
 
-        p1_name = p1_state.get("name")
-        p2_name = p2_state.get("name")
+        p1_name = (p1_state.get("name") or "").lower()
+        p2_name = (p2_state.get("name") or "").lower()
 
-        # Recupera stats Pokémon attivo P1
-        p1_stats = get_pokemon_stats(p1_team, p1_name) if p1_name else None
-
-        # Recupera stats Pokémon lead P2 se è quello attivo
-        p2_stats = None
-        if p2_name and p2_lead and p2_lead.get("name") == p2_name:
-            p2_stats = {
-                "base_hp":  p2_lead.get("base_hp", 0),
-                "base_atk": p2_lead.get("base_atk", 0),
-                "base_def": p2_lead.get("base_def", 0),
-                "base_spa": p2_lead.get("base_spa", 0),
-                "base_spd": p2_lead.get("base_spd", 0),
-                "base_spe": p2_lead.get("base_spe", 0)
-            }
+        p1_stats = pokedex.get(p1_name) if p1_name else None
+        p2_stats = pokedex.get(p2_name) if p2_name else None
 
         if not p1_stats or not p2_stats:
             continue
 
         # Accumula differenze dinamiche
         for stat in stat_keys:
-            stat_diffs[stat].append(p1_stats[stat] - p2_stats[stat])
+            p1_value = p1_stats.get(stat, 0)
+            p2_value = p2_stats.get(stat, 0)
+            stat_diffs[stat].append(p1_value - p2_value)
 
     # ====================================================
     # 3) Aggregazioni finali
@@ -1074,16 +1110,19 @@ def extract_dynamic_stat_diffs(timeline, p1_team, battle):
     results["p1_avg_high_speed_stat_battaglia"] = p1_avg_high_speed_stat_battaglia
 
     return results
-
 def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, type_chart):
     features = {}
     all_types = list(type_chart.keys())
 
+    # ---------------------------------------------
     # 1. TEAM TYPE DIVERSITY (P1)
+    # ---------------------------------------------
     p1_types = [t for p in p1_team for t in p.get("types", []) if t != "notype"]
     features["p1_type_diversity"] = len(set(p1_types))
 
+    # ---------------------------------------------
     # 2. TEAM RESISTANCE + WEAKNESS (P1)
+    # ---------------------------------------------
     def team_weakness(team):
         weakness_counts = []
         for p in team:
@@ -1125,7 +1164,9 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     features["p1_type_resistance"] = team_resistance(p1_team)
     features["p1_type_weakness"] = team_weakness(p1_team)
 
+    # ---------------------------------------------
     # 3. COVERAGE: P1 ha tipi super-effective vs P2 lead?
+    # ---------------------------------------------
     p2_lead = battle.get("p2_lead_details", {})
     if p2_lead:
         p2_types = [t for t in p2_lead.get("types", []) if t != "notype"]
@@ -1145,7 +1186,9 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     else:
         features["p1_team_super_effective_moves"] = 0.0
 
+    # ---------------------------------------------
     # 4. TIMELINE TYPE ADVANTAGE (P1 vs P2)
+    # ---------------------------------------------
     def avg_advantage_over_timeline():
         p1_adv_list = []
         p2_adv_list = []
@@ -1197,65 +1240,67 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
 
     return features
 
+
+###############################################################################
+###############################################################################
+
 def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
     feature_list = []
     pokemon_dict = create_pokemon_dict(data)
+    pokedex = build_pokedex(data)
     #definiamo le features
     for battle in tqdm(data, desc="Extracting features"):
         battle_id = battle.get("battle_id")
         features = {}
         #STATISTICHE
         features.update(compute_static_stats_features(battle))
-        #print(f"{len(features)} feature")
         p1_team = battle["p1_team_details"]
         p1_lead = p1_team[0]
         p2_lead = battle["p2_lead_details"]
         timeline = battle.get("battle_timeline", [])
         if timeline:
             #HP
-            features.update(extract_full_hp_features(timeline, battle, team_size=len(p1_team)))
-            #print(f"{len(features)} feature")
+            features.update(extract_full_hp_features(timeline, team_size=len(p1_team)))
             #BOOST
             features.update(compute_boost_features(timeline, p1_lead, p2_lead))
-            #print(f"{len(features)} feature")
             #TYPE
             features.update(
                 extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, type_chart)
             )
-            #print(f"{len(features)} feature")
             #MOVES and priority
             features.update(get_full_move_features(timeline))
-            #print(f"{len(features)} feature")
             #STATUS
             features.update(compute_status_features(timeline))
-            #print(f"{len(features)} feature")
             #EFFECTS
             features.update(compute_effect_features(timeline))
-            #print(f"{len(features)} feature")
             #EXPECTED DAMAGE TURN1
             features["expected_damage_ratio_turn_1"] = calculate_expected_damage_ratio_turn_1(battle, type_chart)
-            #print(f"{len(features)} feature")
             #DYNAMIC STATS
-            features.update(extract_dynamic_stat_diffs(timeline, p1_team, battle))
-            #print(f"{len(features)} feature")
+            features.update(extract_dynamic_stat_diffs(timeline, p1_team, pokedex))
             #STABS
             features.update(compute_mean_stab_moves(timeline, pokemon_dict))
-            #print(f"{len(features)} feature")
             #interaction
             features.update(calculate_interaction_features(features))
-            #print(f"{len(features)} feature")
         features["battle_id"] = battle_id
         if "player_won" in battle:
             features["player_won"] = int(battle["player_won"])
         #features = dict(sorted(features.items()))
-        features = shuffle_dict(features, seed=5678)
+        #features = shuffle_dict(features, seed=1234)
         feature_list.append(features)
     return pd.DataFrame(feature_list).fillna(0)
+
+
+###############################################################################
+###############################################################################
+
 train_df = create_features(train_data)
 test_df = create_features(test_data)
 features = [col for col in train_df.columns if col not in ["battle_id", "player_won"]]
 X = train_df[features]
 y = train_df["player_won"]
+
+###############################################################################
+###############################################################################
 def build_pipe(USE_PCA=False, POLY_ENABLED=False, seed=1234):
     steps = []
     if POLY_ENABLED:
@@ -1330,7 +1375,7 @@ def select_top_features(model, X, y, k=50, scoring="roc_auc"):
         y,
         scoring=scoring,
         n_repeats=10,
-        random_state=1234,
+        random_state=5678,
         n_jobs=-1
     )
     importances = result.importances_mean
@@ -1342,7 +1387,7 @@ def select_top_features(model, X, y, k=50, scoring="roc_auc"):
         "feature": top_features,
         "importance": top_scores
     })
-    print(importance_df.head(20))
+    #print(importance_df.head(20))
     print(f"[Permutation Importance completato in {time.time()-t0:.2f}s]")
     return list(top_features), importance_df
 #COSTRUZIONE DEL VOTING MODEL (XGB + RF + LR)
@@ -1396,9 +1441,6 @@ def build_voting_model():
         n_jobs=-1
     )
     return model
-"""
-TRAINING COMPLETO (feat selection => retrain =>  evaluate)
-"""
 def train_with_feature_selection(X, y, k=50):
     print("\nFASE 1: Training iniziale con tutte le feature")
     base_model = build_voting_model()
@@ -1426,34 +1468,6 @@ def train_with_feature_selection(X, y, k=50):
     print(f"CV Accuracy: {acc_cv.mean():.4f} ± {acc_cv.std():.4f}")
     print(f"CV AUC: {auc_cv.mean():.4f} ± {auc_cv.std():.4f}")
     return final_model, selected_features, importance_df
-def correlation_pruning(X, threshold=0.90):
-    corr = X.corr().abs()
-    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
-    to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
-    print(f"Dropped {len(to_drop)} correlated features: {to_drop} (>{threshold}).")
-    return [f for f in X.columns if f not in to_drop]
-def final(model, prefix=""):
-    selected = features
-    X_selected = X[selected]
-    model.fit(X_selected, y)
-    final_pipe = model
-    y_train_pred = final_pipe.predict(X_selected)
-    y_train_proba = final_pipe.predict_proba(X_selected)[:, 1]
-    acc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="accuracy")
-    auc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="roc_auc")
-    end_time = time.time()
-    print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
-    print(f"{[f for f in selected]},\n[{int(end_time-middle_time)}sec-{len(selected)}feat]\n{accuracy_score(y, y_train_pred)}->{acc.mean():.4f} ± {acc.std():.4f}, {roc_auc_score(y, y_train_proba)}->{auc.mean():.4f} ± {auc.std():.4f}")
-    complete_prefix = prefix+str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
-    predict_and_submit(test_df, selected, final_pipe, prefix=complete_prefix)
-    print(f"Total execution time: {int(end_time-start_time)} seconds")
-# Assicurati di avere tutti gli import
-from sklearn.ensemble import StackingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
-
 def build_stacking_model():
     #Definizione dei Modelli Base
     # Logistic Regression (regolarizzata)
@@ -1511,48 +1525,80 @@ def build_stacking_model():
     model = StackingClassifier(
         estimators=estimators,
         final_estimator=meta_model,
-        cv=5,               # Fondamentale: usa cross-validation per 
-                            # addestrare il meta-modello su 
-                            # predizioni "out-of-fold"
-        passthrough=False,  # Il meta-modello vede SOLO le predizioni
+        cv=5,               
+        passthrough=False, 
         n_jobs=-1
     )
     
     return model
 
-middle_time = time.time()
-STACKING = True#False#True
-VOTING = False#False#True
-LOGISTIC = False#False#True
-if LOGISTIC:
-    #provo a usare il voting per la selezione delle feature e poi le passo alla logistic
-    model, features, importance_table = train_with_feature_selection(
-        X, y, k=80
-    )
-    X_reduced = X[features]
-    features = correlation_pruning(X_reduced, threshold=0.92)
+
+def correlation_pruning(X, threshold=0.90):
+    corr = X.corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
+    print(f"Dropped {len(to_drop)} correlated features: {to_drop} (>{threshold}).")
+    return [f for f in X.columns if f not in to_drop]
+def final(model, prefix=""):
     selected = features
     X_selected = X[selected]
-    final_pipe = train_regularization(X_selected,y)
+    model.fit(X_selected, y)
+    final_pipe = model
     y_train_pred = final_pipe.predict(X_selected)
     y_train_proba = final_pipe.predict_proba(X_selected)[:, 1]
-    #CHECK OVERFITTING
     acc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="accuracy")
     auc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="roc_auc")
     end_time = time.time()
-    print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
-    print(f"{[f for f in selected]},\n[{int(end_time-middle_time)}sec-{len(selected)}feat]\n{accuracy_score(y, y_train_pred)}->{acc.mean():.4f} ± {acc.std():.4f}, {roc_auc_score(y, y_train_proba)}->{auc.mean():.4f} ± {auc.std():.4f}")
-    prefix = str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
-    
-    predict_and_submit(test_df, features, final_pipe, prefix="LOGISTIC_FEATU_VOTING_")
-elif VOTING:
-    model, features, importance_table = train_with_feature_selection(
-        X, y, k=80
-    )
-    X_reduced = X[features]
-    features = correlation_pruning(X_reduced, threshold=0.92)
-    print("\nModello finale pronto!")
-    final("FINAL_VOTING")
-elif STACKING:
-    model = build_stacking_model()
-    final(model, "stacking")
+    logging.info("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
+    log_msg = f"{[f for f in selected]},\n[{int(end_time-middle_time)}sec-{len(selected)}feat]\n{accuracy_score(y, y_train_pred)}->{acc.mean():.4f} ± {acc.std():.4f}, {roc_auc_score(y, y_train_proba)}->{auc.mean():.4f} ± {auc.std():.4f}"
+    logging.info(log_msg)
+    #print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
+    #print(log_msg)
+    #complete_prefix = prefix+str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
+    predict_and_submit(test_df, selected, final_pipe, prefix=prefix)
+    #print(f"Total execution time: {int(end_time-start_time)} seconds")
+    logging.info(f"Total execution time: {int(end_time-start_time)} seconds")
+###############################################################################
+###############################################################################
+middle_time = time.time()
+#LOGISTIC:
+#provo a usare il voting per la selezione delle feature e poi le passo alla logistic
+""" model, features, importance_table = train_with_feature_selection(
+    X, y, k=80
+)
+X_reduced = X[features]
+features = correlation_pruning(X_reduced, threshold=0.92) """
+""" selected = features
+X_selected = X[selected]
+final_pipe = train_regularization(X_selected,y)
+y_train_pred = final_pipe.predict(X_selected)
+y_train_proba = final_pipe.predict_proba(X_selected)[:, 1]
+#CHECK OVERFITTING
+acc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="accuracy")
+auc = cross_val_score(final_pipe, X_selected, y, cv=5, scoring="roc_auc")
+end_time = time.time()
+print("featureArray,accuracy_score_training,roc_auc_score,accuracy_cross_val_score,roc_auc_cross_val_score")
+print(f"{[f for f in selected]},\n[{int(end_time-middle_time)}sec-{len(selected)}feat]\n{accuracy_score(y, y_train_pred)}->{acc.mean():.4f} ± {acc.std():.4f}, {roc_auc_score(y, y_train_proba)}->{auc.mean():.4f} ± {auc.std():.4f}")
+prefix = str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
+
+predict_and_submit(test_df, features, final_pipe, prefix="logistic")
+exit() """
+#VOTING:
+model, features, importance_table = train_with_feature_selection(
+    X, y, k=80
+)
+X_reduced = X[features]
+
+features = correlation_pruning(X_reduced, threshold=0.92)
+print("\nModello finale pronto!")
+final(model, "voting")
+exit()
+#STACKING
+model = build_stacking_model()
+final(model, "stacking")
+
+###############################################################################
+###############################################################################
+
+###############################################################################
+###############################################################################
