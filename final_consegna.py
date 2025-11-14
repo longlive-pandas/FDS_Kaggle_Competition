@@ -173,9 +173,6 @@ def compute_status_features(timeline):
     p1_major_suffer = 0
     p2_major_suffer = 0
 
-    # ------------------------------------------------------
-    #        SINGLE PASS SCAN
-    # ------------------------------------------------------
     for turn in timeline:
         # === P1 ===
         p1_state = turn.get("p1_pokemon_state", {})
@@ -218,11 +215,6 @@ def compute_status_features(timeline):
                     p2_success += 1
 
     total_turns = len(timeline)
-
-    # ------------------------------------------------------
-    # Compute derived features
-    # ------------------------------------------------------
-
     # Status changes
     p1_status_change = int(np.sum(np.array(p1_status_list[1:]) != np.array(p1_status_list[:-1])))
     p2_status_change = int(np.sum(np.array(p2_status_list[1:]) != np.array(p2_status_list[:-1])))
@@ -242,9 +234,6 @@ def compute_status_features(timeline):
     p1_cumulative_pct = p1_major_suffer / total_turns
     p2_cumulative_pct = p2_major_suffer / total_turns
 
-    # ------------------------------------------------------
-    # Return unified result
-    # ------------------------------------------------------
     return {
         # Basic counts
         "status_p1": status_count_p1,
@@ -436,14 +425,7 @@ def compute_avg_offensive_potential(timeline, pokemon_dict):
         "p2_type_advantage": p2_avg,
         "diff_type_advantage": p1_avg - p2_avg
     }
-
-    
-def get_p1_base_speed(pokemon_name, p1_team_details):
-    search_name = pokemon_name.lower().strip()
-    for pokemon in p1_team_details:
-        if pokemon.get("name", "").lower().strip() == search_name:
-            return pokemon.get("base_spe", 0)
-    return 0    
+#vedi se usarla
 def compute_statistics(values: Iterable[float], prefix: str) -> Dict[str, float]:
     seq = list(values)
     if not seq:
@@ -463,33 +445,30 @@ def compute_statistics(values: Iterable[float], prefix: str) -> Dict[str, float]
         f"{prefix}_max": float(arr.max()),
     }
 def extract_full_hp_features(timeline, battle, team_size=6):
-    """
-    Unifica tutte le features basate su HP in una sola funzione.
-    Include:
-    - HP diff per turno
-    - vantaggio HP medio
-    - trend HP (regressione lineare)
-    - early/late HP advantage
-    - final HP % delle squadre
-    - numero Pokémon utilizzati
-    - numero KO (sconfitti)
-    - HP instability (std)
-    - durata battaglia
-    """
-
-    if not timeline:
+    
+    if not timeline or len(timeline) < 3:
         # fallback per battaglie vuote
         return {k: 0.0 for k in [
-            "hp_diff_mean", "p1_hp_advantage_mean",
+            "hp_advantage_score",
             "p1_n_pokemon_use", "p2_n_pokemon_use",
             "diff_final_schieramento", "nr_pokemon_sconfitti_p1",
             "nr_pokemon_sconfitti_p2", "nr_pokemon_sconfitti_diff",
             "p1_pct_final_hp", "p2_pct_final_hp", "diff_final_hp",
-            "battle_duration", "hp_loss_rate",
+            "battle_duration", 
             "early_hp_mean_diff", "late_hp_mean_diff",
             "hp_delta_trend", "p1_hp_std", "p2_hp_std", "hp_delta_std",
+            "hp_volatility", "momentum_shift", "p1_momentum_phases"
         ]}
-
+    """Cattura i trend di vantaggio durante la battaglia"""
+    hp_deltas = [t["p1_pokemon_state"]["hp_pct"] - t["p2_pokemon_state"]["hp_pct"] 
+                 for t in timeline]
+    
+    # Conta i cambi di segno (shift di momentum)
+    momentum_shifts = sum(1 for i in range(1, len(hp_deltas)) 
+                         if hp_deltas[i] * hp_deltas[i-1] < 0)
+    
+    # Fasi di vantaggio P1
+    p1_advantage_phases = sum(1 for delta in hp_deltas if delta > 10)
     # ================================
     # HP arrays per turno
     # ================================
@@ -547,7 +526,6 @@ def extract_full_hp_features(timeline, battle, team_size=6):
     except:
         duration = len(timeline)
 
-    hp_loss_rate = diff_final_hp / duration if duration > 0 else 0.0
 
     # ================================
     # Early / Late game HP differences
@@ -573,8 +551,7 @@ def extract_full_hp_features(timeline, battle, team_size=6):
     hp_delta_std = float(np.std(hp_delta))
 
     return {
-        "hp_diff_mean": hp_diff_mean,
-        "p1_hp_advantage_mean": p1_hp_advantage_mean,
+        "hp_advantage_score": hp_diff_mean * (1 + p1_hp_advantage_mean),
 
         "p1_n_pokemon_use": p1_n_pokemon_use,
         "p2_n_pokemon_use": p2_n_pokemon_use,
@@ -589,7 +566,6 @@ def extract_full_hp_features(timeline, battle, team_size=6):
         "diff_final_hp": diff_final_hp,
 
         "battle_duration": duration,
-        "hp_loss_rate": hp_loss_rate,
 
         "early_hp_mean_diff": early_hp_mean_diff,
         "late_hp_mean_diff":  late_hp_mean_diff,
@@ -598,8 +574,20 @@ def extract_full_hp_features(timeline, battle, team_size=6):
         "p1_hp_std": p1_hp_std,
         "p2_hp_std": p2_hp_std,
         "hp_delta_std": hp_delta_std,
+        "momentum_shift": momentum_shifts,
+        "p1_momentum_phases": p1_advantage_phases,
+        "hp_volatility": np.std(np.diff(hp_deltas)) if len(hp_deltas) > 1 else 0
     }
 
+def compute_first_hit_feature(timeline):
+    for turn in timeline:
+        p1 = turn.get("p1_move_details")
+        p2 = turn.get("p2_move_details")
+        if p1 and p1.get("base_power", 0) > 0:
+            return 1
+        if p2 and p2.get("base_power", 0) > 0:
+            return 0
+    return 0
 #MOVES
 def get_full_move_features(timeline):
     p1_move_power_weighted = []
@@ -680,7 +668,7 @@ def get_full_move_features(timeline):
     else:
         priority_diff = 0.0
         priority_rate_advantage = 0.0
-
+    p1_hit_first = compute_first_hit_feature(timeline)
     return {
         "p1_move_power_weighted": np.sum(p1_move_power_weighted),
         "p1_number_attacks": p1_number_attacks,
@@ -697,9 +685,10 @@ def get_full_move_features(timeline):
         "p2_sum_negative_priority": p2_sum_negative_priority,
         "diff_negative_priority": p1_sum_negative_priority - p2_sum_negative_priority,
 
-        # Integrated priority metrics
         "priority_diff": priority_diff,
         "priority_rate_advantage": priority_rate_advantage,
+
+        #"p1_hit_first": p1_hit_first
     }
 
 BOOST_MULT = {
@@ -707,14 +696,6 @@ BOOST_MULT = {
      0: 1.0,
      1: 1.5,  2: 2.0,  3: 2.5,  4: 3.0,  5: 3.5,  6: 4.0
 }
-
-
-#12
-important_effects = [
-    "substitute", "reflect", "light_screen",
-    "leech_seed", "bind", "wrap", "clamp",
-    "confusion", "toxic", "poison", "burn", "paralysis"
-]
 
 #Output: {"p1_hp_pct_sum": 2.0, "p2_hp_pct_sum": 1.9, "diff_hp_pct": 0.1}
 import random
@@ -823,9 +804,6 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
             "p1_is_faster_effective": 0,
         }
 
-    # ----------------------------------------------------------
-    # Init
-    # ----------------------------------------------------------
     offense_boost_diff_list = []
     sum_boost_p1 = 0
     sum_boost_p2 = 0
@@ -838,9 +816,6 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
     last_b1 = None
     last_b2 = None
 
-    # ----------------------------------------------------------
-    # SINGLE SCAN OF TIMELINE
-    # ----------------------------------------------------------
     for entry in timeline:
         turn = entry.get("turn", None)
         b1 = entry.get("p1_pokemon_state", {}).get("boosts", {})
@@ -876,9 +851,6 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
     if last_b2 is None:
         last_b2 = {"atk":0,"def":0,"spa":0,"spd":0,"spe":0}
 
-    # ----------------------------------------------------------
-    # LAST TURN DIFFS
-    # ----------------------------------------------------------
     diff_atk = last_b1["atk"] - last_b2["atk"]
     diff_def = last_b1["def"] - last_b2["def"]
     diff_spa = last_b1["spa"] - last_b2["spa"]
@@ -887,9 +859,6 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
 
     diff_total = sum(last_b1.values()) - sum(last_b2.values())
 
-    # ----------------------------------------------------------
-    # EFFECTIVE STATS (only if base stats provided)
-    # ----------------------------------------------------------
     diff_eff_off = 0
     diff_eff_def = 0
     p1_is_faster_effective = 0
@@ -936,11 +905,11 @@ def compute_boost_features(timeline, base_stats_p1=None, base_stats_p2=None):
         "p1_is_faster_effective": p1_is_faster_effective,
     }
 def compute_effect_features(timeline):
-    """
-    Unifica extract_effect_features_from_timeline per p1 e p2
-    in un'unica funzione, con una sola scansione del timeline.
-    """
-    # initialize dicts
+    important_effects = [
+        "substitute", "reflect", "light_screen",
+        "leech_seed", "bind", "wrap", "clamp",
+        "confusion", "toxic", "poison", "burn", "paralysis"
+    ]
     freq = {
         "p1": {eff: 0 for eff in important_effects},
         "p2": {eff: 0 for eff in important_effects},
@@ -949,11 +918,8 @@ def compute_effect_features(timeline):
         "p1": {eff: None for eff in important_effects},
         "p2": {eff: None for eff in important_effects},
     }
-
-    # ---- SINGLE PASS ----
     for entry in timeline:
         turn = entry.get("turn", None)
-
         for prefix, state_key in (("p1", "p1_pokemon_state"), ("p2", "p2_pokemon_state")):
             state = entry.get(state_key, {})
             effects = state.get("effects", [])
@@ -963,14 +929,10 @@ def compute_effect_features(timeline):
                     freq[prefix][eff] += 1
                     if first_turn[prefix][eff] is None:
                         first_turn[prefix][eff] = turn
-
-    # replace None with 31
     for prefix in ("p1", "p2"):
         for eff in important_effects:
             if first_turn[prefix][eff] is None:
                 first_turn[prefix][eff] = 31
-
-    # ---- flatten result in feature dict ----
     out = {}
     for prefix in ("p1", "p2"):
         for eff in important_effects:
@@ -1001,9 +963,7 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
         p1_expected_damage = 0.0
         p2_expected_damage = 0.0
 
-        # -----------------------------
         # P1 damage on P2
-        # -----------------------------
         if p1_move and p1_move.get("category") in ["SPECIAL", "PHYSICAL"]:
             base_power = p1_move.get("base_power", 0)
             move_type = p1_move.get("type", "").upper()
@@ -1019,9 +979,7 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
             m = get_type_multiplier(move_type, p2_defender_types, type_chart)
             p1_expected_damage = base_power * (att / dfn) * m
 
-        # -----------------------------
         # P2 damage on P1
-        # -----------------------------
         if p2_move and p2_move.get("category") in ["SPECIAL", "PHYSICAL"]:
             base_power = p2_move.get("base_power", 0)
             move_type = p2_move.get("type", "").upper()
@@ -1037,9 +995,7 @@ def calculate_expected_damage_ratio_turn_1(battle, type_chart):
             m = get_type_multiplier(move_type, p1_defender_types, type_chart)
             p2_expected_damage = base_power * (att / dfn) * m
 
-        # -----------------------------
         # Log-smoothed advantage
-        # -----------------------------
         p1_smooth = p1_expected_damage + 1.0
         p2_smooth = p2_expected_damage + 1.0
 
@@ -1123,15 +1079,11 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     features = {}
     all_types = list(type_chart.keys())
 
-    # ---------------------------------------------
     # 1. TEAM TYPE DIVERSITY (P1)
-    # ---------------------------------------------
     p1_types = [t for p in p1_team for t in p.get("types", []) if t != "notype"]
     features["p1_type_diversity"] = len(set(p1_types))
 
-    # ---------------------------------------------
     # 2. TEAM RESISTANCE + WEAKNESS (P1)
-    # ---------------------------------------------
     def team_weakness(team):
         weakness_counts = []
         for p in team:
@@ -1173,9 +1125,7 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     features["p1_type_resistance"] = team_resistance(p1_team)
     features["p1_type_weakness"] = team_weakness(p1_team)
 
-    # ---------------------------------------------
     # 3. COVERAGE: P1 ha tipi super-effective vs P2 lead?
-    # ---------------------------------------------
     p2_lead = battle.get("p2_lead_details", {})
     if p2_lead:
         p2_types = [t for t in p2_lead.get("types", []) if t != "notype"]
@@ -1195,9 +1145,7 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     else:
         features["p1_team_super_effective_moves"] = 0.0
 
-    # ---------------------------------------------
     # 4. TIMELINE TYPE ADVANTAGE (P1 vs P2)
-    # ---------------------------------------------
     def avg_advantage_over_timeline():
         p1_adv_list = []
         p2_adv_list = []
@@ -1258,6 +1206,7 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         features = {}
         #STATISTICHE
         features.update(compute_static_stats_features(battle))
+        #print(f"{len(features)} feature")
         p1_team = battle["p1_team_details"]
         p1_lead = p1_team[0]
         p2_lead = battle["p2_lead_details"]
@@ -1265,31 +1214,41 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
         if timeline:
             #HP
             features.update(extract_full_hp_features(timeline, battle, team_size=len(p1_team)))
+            #print(f"{len(features)} feature")
             #BOOST
             features.update(compute_boost_features(timeline, p1_lead, p2_lead))
+            #print(f"{len(features)} feature")
             #TYPE
             features.update(
                 extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, type_chart)
             )
+            #print(f"{len(features)} feature")
             #MOVES and priority
             features.update(get_full_move_features(timeline))
+            #print(f"{len(features)} feature")
             #STATUS
             features.update(compute_status_features(timeline))
+            #print(f"{len(features)} feature")
             #EFFECTS
             features.update(compute_effect_features(timeline))
+            #print(f"{len(features)} feature")
             #EXPECTED DAMAGE TURN1
             features["expected_damage_ratio_turn_1"] = calculate_expected_damage_ratio_turn_1(battle, type_chart)
+            #print(f"{len(features)} feature")
             #DYNAMIC STATS
             features.update(extract_dynamic_stat_diffs(timeline, p1_team, battle))
+            #print(f"{len(features)} feature")
             #STABS
             features.update(compute_mean_stab_moves(timeline, pokemon_dict))
+            #print(f"{len(features)} feature")
             #interaction
             features.update(calculate_interaction_features(features))
+            #print(f"{len(features)} feature")
         features["battle_id"] = battle_id
         if "player_won" in battle:
             features["player_won"] = int(battle["player_won"])
         #features = dict(sorted(features.items()))
-        features = shuffle_dict(features, seed=1234)
+        features = shuffle_dict(features, seed=5678)
         feature_list.append(features)
     return pd.DataFrame(feature_list).fillna(0)
 train_df = create_features(train_data)
@@ -1433,7 +1392,7 @@ def build_voting_model():
             ("lr", lr)
         ],
         voting="soft",
-        weights=[4, 1, 1],   #XGB più influente
+        weights=[4, 1, 3],   #XGB più influente
         n_jobs=-1
     )
     return model
@@ -1473,7 +1432,7 @@ def correlation_pruning(X, threshold=0.90):
     to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
     print(f"Dropped {len(to_drop)} correlated features: {to_drop} (>{threshold}).")
     return [f for f in X.columns if f not in to_drop]
-def final(prefix=""):
+def final(model, prefix=""):
     selected = features
     X_selected = X[selected]
     model.fit(X_selected, y)
@@ -1488,12 +1447,82 @@ def final(prefix=""):
     complete_prefix = prefix+str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
     predict_and_submit(test_df, selected, final_pipe, prefix=complete_prefix)
     print(f"Total execution time: {int(end_time-start_time)} seconds")
-#BASE
+# Assicurati di avere tutti gli import
+from sklearn.ensemble import StackingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
+
+def build_stacking_model():
+    #Definizione dei Modelli Base
+    # Logistic Regression (regolarizzata)
+    lr = Pipeline([
+        ("scaler", StandardScaler()),
+        ("lr", LogisticRegression(
+            C=0.3,
+            penalty="l2",
+            solver="liblinear",
+            max_iter=1500,
+            random_state=1234
+        ))
+    ])
+    
+    # Random Forest (meno overfitting)
+    rf = RandomForestClassifier(
+        n_estimators=500,
+        max_depth=4,
+        min_samples_leaf=4,
+        max_features="sqrt",
+        bootstrap=True,
+        n_jobs=-1,
+        random_state=1234
+    )
+    
+    # XGBoost (modello principale)
+    xgb = XGBClassifier(
+        n_estimators=350,
+        learning_rate=0.05,
+        max_depth=4,
+        min_child_weight=3,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        reg_lambda=1.5,
+        reg_alpha=0.1,
+        objective="binary:logistic",
+        eval_metric="auc",
+        tree_method="hist",
+        random_state=1234,
+        n_jobs=-1
+    )
+    
+    #Ensemble Stacking
+    # Lista degli estimatori base
+    estimators = [
+        ('xgb', xgb),
+        ('rf', rf),
+        ('lr', lr)
+    ]
+    
+    # Meta-modello: 
+    meta_model = LogisticRegression(max_iter=1000, C=1.0, random_state=1234)
+
+    # Stacking Classifier
+    model = StackingClassifier(
+        estimators=estimators,
+        final_estimator=meta_model,
+        cv=5,               # Fondamentale: usa cross-validation per 
+                            # addestrare il meta-modello su 
+                            # predizioni "out-of-fold"
+        passthrough=False,  # Il meta-modello vede SOLO le predizioni
+        n_jobs=-1
+    )
+    
+    return model
+
 middle_time = time.time()
-VOTING = True#False#True
-NEW_VOTING = True#False#True
-BASE = True#False#True
-FINAL_VOTING = True#False#True
+STACKING = True#False#True
+VOTING = False#False#True
 LOGISTIC = False#False#True
 if LOGISTIC:
     #provo a usare il voting per la selezione delle feature e poi le passo alla logistic
@@ -1516,191 +1545,14 @@ if LOGISTIC:
     prefix = str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
     
     predict_and_submit(test_df, features, final_pipe, prefix="LOGISTIC_FEATU_VOTING_")
-elif FINAL_VOTING:
+elif VOTING:
     model, features, importance_table = train_with_feature_selection(
         X, y, k=80
     )
     X_reduced = X[features]
-    
     features = correlation_pruning(X_reduced, threshold=0.92)
     print("\nModello finale pronto!")
     final("FINAL_VOTING")
-elif NEW_VOTING:
-    #Logistic Regression (stabile per feature quasi lineari)
-    lr = Pipeline([
-        ("scaler", StandardScaler()),
-        ("lr", LogisticRegression(
-            C=0.5,
-            penalty="l2",
-            solver="liblinear",
-            max_iter=1000,
-            random_state=1234
-        ))
-    ])
-    #Random Forest (robusto, ottimo su high-dimensional noise)
-    rf = RandomForestClassifier(
-        n_estimators=600,
-        max_depth=6,
-        max_features="sqrt",
-        bootstrap=True,
-        n_jobs=-1,
-        random_state=1234
-    )
-    #XGBoost (il più forte)
-    xgb = XGBClassifier(
-        n_estimators=500,
-        learning_rate=0.03,
-        max_depth=4,
-        min_child_weight=1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_lambda=1.0,
-        reg_alpha=0.0,
-        objective="binary:logistic",
-        eval_metric="auc",
-        tree_method="hist",
-        random_state=1234,
-        n_jobs=-1
-    )
-    #Voting Ensemble
-    model = VotingClassifier(
-        estimators=[
-            ("xgb", xgb),
-            ("rf", rf),
-            ("lr", lr)
-        ],
-        voting="soft",
-        weights=[3, 1, 2],   #XGB più forte => peso maggiore
-        n_jobs=-1
-    )
-    final()
-elif VOTING:
-    rf = RandomForestClassifier(
-        n_estimators=1100,
-        max_depth=5,                #più profondo
-        min_samples_leaf=2,          #contro overfitting
-        max_features=0.2,            #più decorrelazione
-        bootstrap=True,
-        class_weight="balanced",     #migliora roc_auc
-        random_state=1234,
-        n_jobs=-1
-    )
-    ada = AdaBoostClassifier(
-        estimator=DecisionTreeClassifier(max_depth=3),
-        n_estimators=500,
-        learning_rate=0.5,
-        random_state=1234
-    )
-    gb = GradientBoostingClassifier(
-        n_estimators=300,
-        learning_rate=0.05,
-        max_depth=2,
-        subsample=0.8,
-        min_samples_split=20,
-        min_samples_leaf=5,
-        random_state=1234
-    )
-    lr = Pipeline([
-        ("scaler", StandardScaler()),
-        #("pca", PCA(n_components=0.95)), #keep 95% variance
-        ("lr", LogisticRegression(
-            C=1,
-            max_iter=1000,
-            solver="liblinear",
-            #penalty="l1" 
-        ))
-    ])
-    model = VotingClassifier(
-        estimators=[
-            ("rf", rf),
-            #("ada", ada),
-            ("gb", gb),
-            ("lr", lr)
-        ],
-        voting="soft",
-        weights=[1,1, 2],  #tune on performance
-        n_jobs=-1
-    )
-    #scegli K = 40 (poi provo 30–60)
-    features, importance_table = select_top_features(gb, X, y, k=90)
-    #model = rf
-    #model = gb
-    #1112 850 918
-    #2112 850 917
-    #2113 852 917 rf,ada,gb,lr
-    #213 tolto gb 847 916 rf,ada,lr
-    #213 tolto ada 852 917 rf,gb,lr
-    #113 850 917 rf,gb,lr
-    #stacked_model = voting_model
-    final()
-elif BASE:
-    rf = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=6,  
-        random_state=1234,
-        n_jobs=-1
-    )
-    gb = GradientBoostingClassifier(
-        n_estimators=200,      
-        learning_rate=0.03,
-        max_depth=3, 
-        random_state=1234
-    )
-    model = StackingClassifier(
-        estimators=[
-            ("rf", rf),         
-            ("gb", gb)          
-        ],
-        final_estimator=LogisticRegression(
-            max_iter=2000, 
-            C=0.05, 
-            random_state=1234
-        ), 
-        passthrough=False, 
-        n_jobs=-1
-    )
-    final()
-else:
-    rf = RandomForestClassifier(random_state=1234, n_jobs=-1)
-    gb = GradientBoostingClassifier(random_state=1234)
-    log_reg = LogisticRegression(random_state=1234, max_iter=2000)
-   
-    stacked_model_base = StackingClassifier(
-        estimators=[("rf", rf), ("gb", gb)],
-        final_estimator=XGBClassifier(random_state=1234, n_estimators=100, learning_rate=0.05),
-        passthrough=True,
-        n_jobs=-1
-    )
-    param_grid = {
-        #Random Forest 
-        "rf__n_estimators": [100, 300, 500],
-        "rf__max_depth": [None, 5, 10, 20],
-        "rf__min_samples_split": [2, 5, 10],
-        "rf__min_samples_leaf": [1, 2, 4],
-        
-        #Gradient Boosting 
-        "gb__n_estimators": [100, 200, 300],
-        "gb__learning_rate": [0.01, 0.05, 0.1],
-        "gb__max_depth": [2, 3, 5],
-        "gb__subsample": [0.8, 1.0],
-        
-        #XGBoost (meta-model) 
-        "final_estimator__n_estimators": [100, 200, 300],
-        "final_estimator__learning_rate": [0.01, 0.05, 0.1],
-        "final_estimator__max_depth": [3, 5, 7],
-        "final_estimator__subsample": [0.8, 1.0],
-        "final_estimator__colsample_bytree": [0.8, 1.0]
-    }
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1234)
-    
-    model = RandomizedSearchCV(
-        estimator=stacked_model_base,
-        param_distributions=param_grid,
-        n_iter=50,  #prova anche con 100?
-        cv=5,
-        scoring="roc_auc",
-        n_jobs=-1,
-        verbose=2,
-        random_state=1234
-    )
-    final()
+elif STACKING:
+    model = build_stacking_model()
+    final(model, "stacking")
