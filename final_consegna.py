@@ -204,11 +204,8 @@ def compute_status_features(timeline):
     p1_major_suffer = 0
     p2_major_suffer = 0
 
-    # ------------------------------------------------------
-    #        SINGLE PASS SCAN
-    # ------------------------------------------------------
     for turn in timeline:
-        # === P1 ===
+        # P1
         p1_state = turn.get("p1_pokemon_state", {})
         s1 = p1_state.get("status", "nostatus").lower()
         p1_status_list.append(s1)
@@ -219,7 +216,7 @@ def compute_status_features(timeline):
                 major_count_p1 += 1
                 p1_major_suffer += 1
 
-        # === P2 ===
+        # P2
         p2_state = turn.get("p2_pokemon_state", {})
         s2 = p2_state.get("status", "nostatus").lower()
         p2_status_list.append(s2)
@@ -230,7 +227,7 @@ def compute_status_features(timeline):
                 major_count_p2 += 1
                 p2_major_suffer += 1
 
-        # === P1 Infliction Attempt (P1 hitting P2) ===
+        # P1 Infliction Attempt (P1 hitting P2)
         m1 = turn.get("p1_move_details")
         if m1:
             name = m1.get("name", "").lower()
@@ -239,7 +236,7 @@ def compute_status_features(timeline):
                 if s2 in MAJOR_STATUSES:
                     p1_success += 1
 
-        # === P2 Infliction Attempt (P2 hitting P1) ===
+        # P2 Infliction Attempt (P2 hitting P1)
         m2 = turn.get("p2_move_details")
         if m2:
             name = m2.get("name", "").lower()
@@ -512,16 +509,11 @@ def extract_full_hp_features(timeline, team_size=6):
     p2_hp = np.array(p2_hp)
     hp_delta = p1_hp - p2_hp
 
-    # ================================
     # Feature base sugli HP
-    # ================================
     hp_diff_mean = float(np.mean(hp_delta))
     p1_hp_advantage_mean = float(np.mean(p1_hp > p2_hp))
 
-    # ================================
     # Pokémon finali (ultimo HP noto)
-    # ================================
-
     p1_hp_final = {}
     p2_hp_final = {}
 
@@ -539,17 +531,13 @@ def extract_full_hp_features(timeline, team_size=6):
     nr_pokemon_sconfitti_p2 = sum(v == 0 for v in p2_hp_final.values())
     nr_pokemon_sconfitti_diff = nr_pokemon_sconfitti_p1 - nr_pokemon_sconfitti_p2
 
-    # ================================
     # Final HP percent
     # (normalizzato anche per Pokémon non entrati)
-    # ================================
     p1_pct_final_hp = sum(p1_hp_final.values()) + (team_size - len(p1_hp_final))
     p2_pct_final_hp = sum(p2_hp_final.values()) + (team_size - len(p2_hp_final))
     diff_final_hp = p1_pct_final_hp - p2_pct_final_hp
 
-    # ================================
     # Durata della battaglia
-    # ================================
     try:
         duration = sum(
             t["p1_pokemon_state"]["hp_pct"] > 0 and 
@@ -561,18 +549,14 @@ def extract_full_hp_features(timeline, team_size=6):
 
     hp_loss_rate = diff_final_hp / duration if duration > 0 else 0.0
 
-    # ================================
     # Early / Late game HP differences
-    # ================================
     phases = 3
     slice_idx = len(p1_hp) // phases
 
     early_hp_mean_diff = float(np.mean(hp_delta[:slice_idx])) if slice_idx > 0 else 0.0
     late_hp_mean_diff  = float(np.mean(hp_delta[-slice_idx:])) if slice_idx > 0 else 0.0
 
-    # ================================
     # Trend HP (regressione)
-    # ================================
     if len(hp_delta) > 1:
         slope, _, _, _, _ = linregress(np.arange(len(hp_delta)), hp_delta)
         hp_delta_trend = float(slope)
@@ -629,9 +613,7 @@ def get_full_move_features(timeline):
     p2_priorities = []
 
     for turn in timeline:
-        # ======================================
-        #           PLAYER 1
-        # ======================================
+        # PLAYER 1
         move = turn.get("p1_move_details")
         if isinstance(move, dict):
             acc = move.get("accuracy", 1.0)
@@ -653,9 +635,7 @@ def get_full_move_features(timeline):
             if prio is not None:
                 p1_priorities.append(prio)
 
-        # ======================================
-        #           PLAYER 2
-        # ======================================
+        # PLAYER 2
         move = turn.get("p2_move_details")
         if isinstance(move, dict):
             acc = move.get("accuracy", 1.0)
@@ -677,9 +657,7 @@ def get_full_move_features(timeline):
             if prio is not None:
                 p2_priorities.append(prio)
 
-    # =================================================
-    #      PRIORITY ADVANTAGE METRICS (UNIFIED)
-    # =================================================
+    # PRIORITY ADVANTAGE METRICS (UNIFIED)
     if p1_priorities and p2_priorities:
         avg_p1 = np.mean(p1_priorities)
         avg_p2 = np.mean(p2_priorities)
@@ -713,6 +691,56 @@ def get_full_move_features(timeline):
         # Integrated priority metrics
         "priority_diff": priority_diff,
         "priority_rate_advantage": priority_rate_advantage,
+    }
+def compute_switch_pressure(timeline):
+    if not timeline:
+        return {
+            "p1_switch_count": 0,
+            "p2_switch_count": 0,
+            "diff_switch_count": 0,
+            "p1_avg_active_duration": 0.0,
+            "p2_avg_active_duration": 0.0,
+            "diff_avg_active_duration": 0.0,
+        }
+
+    def get_stats_for_player(prefix: str):
+        state_key = f"{prefix}_pokemon_state"
+        last_name = None
+        current_run = 0
+        runs = []
+        switches = 0
+
+        for entry in timeline:
+            state = entry.get(state_key, {}) or {}
+            name = state.get("name")
+            if not name:
+                continue
+            name = name.lower()
+
+            if name == last_name:
+                current_run += 1
+                continue
+
+            if last_name is not None:
+                runs.append(current_run)
+                switches += 1
+
+            last_name = name
+            current_run = 1
+
+        if current_run:
+            runs.append(current_run)
+
+        avg_duration = float(np.mean(runs)) if runs else 0.0
+        return switches, avg_duration
+
+    p1_switches, p1_avg_duration = get_stats_for_player("p1")
+    p2_switches, p2_avg_duration = get_stats_for_player("p2")
+
+    return {
+        "p1_avg_active_duration": p1_avg_duration,
+        "p2_avg_active_duration": p2_avg_duration,
+        "diff_avg_active_duration": p1_avg_duration - p2_avg_duration,
     }
 def shuffle_dict(d, seed=1234):
     rnd = random.Random(seed)       # generatore deterministico
@@ -1057,17 +1085,13 @@ def extract_dynamic_stat_diffs(timeline, p1_team, pokedex):
     MEDIUM_SPEED_THRESHOLD = 90   # medium-speed Pokémon
     HIGH_SPEED_THRESHOLD = 100    # high-speed Pokémon
 
-    # ====================================================
-    # 1) TEAM SPEED-BASED FEATURES (NUOVE)
-    # ====================================================
+    # TEAM SPEED-BASED FEATURES (NUOVE)
     speeds = np.array([p.get("base_spe", 0) for p in p1_team])
 
     p1_avg_speed_stat_battaglia = float(np.mean(speeds > MEDIUM_SPEED_THRESHOLD))
     p1_avg_high_speed_stat_battaglia = float(np.mean(speeds > HIGH_SPEED_THRESHOLD))
 
-    # ====================================================
-    # 2) DYNAMIC STAT DIFFERENCES P1 ACTIVE VS P2
-    # ====================================================
+    # DYNAMIC STAT DIFFERENCES P1 ACTIVE VS P2
     stat_keys = ["base_atk", "base_spa", "base_spe"]
     stat_diffs = {k: [] for k in stat_keys}
 
@@ -1090,9 +1114,7 @@ def extract_dynamic_stat_diffs(timeline, p1_team, pokedex):
             p2_value = p2_stats.get(stat, 0)
             stat_diffs[stat].append(p1_value - p2_value)
 
-    # ====================================================
-    # 3) Aggregazioni finali
-    # ====================================================
+    # Aggregazioni finali
     results = {}
 
     for stat, values in stat_diffs.items():
@@ -1103,9 +1125,7 @@ def extract_dynamic_stat_diffs(timeline, p1_team, pokedex):
             results[f"mean_{stat}_diff_timeline"] = 0.0
             results[f"std_{stat}_diff_timeline"]  = 0.0
 
-    # =========================
-    # ADD THE NEW SPEED FEATURES
-    # =========================
+    # SPEED FEATURES
     results["p1_avg_speed_stat_battaglia"] = p1_avg_speed_stat_battaglia
     results["p1_avg_high_speed_stat_battaglia"] = p1_avg_high_speed_stat_battaglia
 
@@ -1114,15 +1134,11 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     features = {}
     all_types = list(type_chart.keys())
 
-    # ---------------------------------------------
-    # 1. TEAM TYPE DIVERSITY (P1)
-    # ---------------------------------------------
+    # TEAM TYPE DIVERSITY (P1)
     p1_types = [t for p in p1_team for t in p.get("types", []) if t != "notype"]
     features["p1_type_diversity"] = len(set(p1_types))
 
-    # ---------------------------------------------
-    # 2. TEAM RESISTANCE + WEAKNESS (P1)
-    # ---------------------------------------------
+    # TEAM RESISTANCE + WEAKNESS (P1)
     def team_weakness(team):
         weakness_counts = []
         for p in team:
@@ -1164,9 +1180,7 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     features["p1_type_resistance"] = team_resistance(p1_team)
     features["p1_type_weakness"] = team_weakness(p1_team)
 
-    # ---------------------------------------------
-    # 3. COVERAGE: P1 ha tipi super-effective vs P2 lead?
-    # ---------------------------------------------
+    # COVERAGE: P1 ha tipi super-effective vs P2 lead?
     p2_lead = battle.get("p2_lead_details", {})
     if p2_lead:
         p2_types = [t for t in p2_lead.get("types", []) if t != "notype"]
@@ -1186,9 +1200,7 @@ def extract_type_advantage_features(battle, timeline, p1_team, pokemon_dict, typ
     else:
         features["p1_team_super_effective_moves"] = 0.0
 
-    # ---------------------------------------------
-    # 4. TIMELINE TYPE ADVANTAGE (P1 vs P2)
-    # ---------------------------------------------
+    # TIMELINE TYPE ADVANTAGE (P1 vs P2)
     def avg_advantage_over_timeline():
         p1_adv_list = []
         p2_adv_list = []
@@ -1269,6 +1281,8 @@ def create_features(data: list[dict], is_test=False) -> pd.DataFrame:
             )
             #MOVES and priority
             features.update(get_full_move_features(timeline))
+            #SWITCH PRESSURE
+            features.update(compute_switch_pressure(timeline))
             #STATUS
             features.update(compute_status_features(timeline))
             #EFFECTS
@@ -1366,7 +1380,7 @@ def get_power_set_non_empty_as_list(array):
   ]
   return non_empty_subsets_lists
 def select_top_features(model, X, y, k=50, scoring="roc_auc"):
-    print(f"\nCalcolo permutation importances (Top {k})...")
+    print(f"\nCalcolo permutation importances (Top {k})")
     t0 = time.time()
     model.fit(X, y)
     result = permutation_importance(
@@ -1375,7 +1389,7 @@ def select_top_features(model, X, y, k=50, scoring="roc_auc"):
         y,
         scoring=scoring,
         n_repeats=10,
-        random_state=5678,
+        random_state=89351,
         n_jobs=-1
     )
     importances = result.importances_mean
@@ -1563,11 +1577,13 @@ def final(model, prefix=""):
 middle_time = time.time()
 #LOGISTIC:
 #provo a usare il voting per la selezione delle feature e poi le passo alla logistic
-""" model, features, importance_table = train_with_feature_selection(
+"""
+model, features, importance_table = train_with_feature_selection(
     X, y, k=80
 )
 X_reduced = X[features]
-features = correlation_pruning(X_reduced, threshold=0.92) """
+features = correlation_pruning(X_reduced, threshold=0.92)
+"""
 """ selected = features
 X_selected = X[selected]
 final_pipe = train_regularization(X_selected,y)
