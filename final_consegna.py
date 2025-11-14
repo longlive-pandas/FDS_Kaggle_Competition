@@ -1584,7 +1584,7 @@ model, features, importance_table = train_with_feature_selection(
 X_reduced = X[features]
 features = correlation_pruning(X_reduced, threshold=0.92)
 """
-""" selected = features
+selected = features
 X_selected = X[selected]
 final_pipe = train_regularization(X_selected,y)
 y_train_pred = final_pipe.predict(X_selected)
@@ -1598,7 +1598,7 @@ print(f"{[f for f in selected]},\n[{int(end_time-middle_time)}sec-{len(selected)
 prefix = str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.mean()))
 
 predict_and_submit(test_df, features, final_pipe, prefix="logistic")
-exit() """
+
 #VOTING:
 model, features, importance_table = train_with_feature_selection(
     X, y, k=80
@@ -1608,7 +1608,6 @@ X_reduced = X[features]
 features = correlation_pruning(X_reduced, threshold=0.92)
 print("\nModello finale pronto!")
 final(model, "voting")
-exit()
 #STACKING
 model = build_stacking_model()
 final(model, "stacking")
