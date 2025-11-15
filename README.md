@@ -1,24 +1,69 @@
+
 # FDS_Kaggle_Competition
-A repo for the FDS kaggle competition on binary classifier for the Pokemon dataset
+
+A repository for the **FDS Kaggle competition**, focused on building a **binary classifier** for the Pokémon dataset.
+
+Clone the repository with:
 
 ```bash
 git clone https://github.com/longlive-pandas/FDS_Kaggle_Competition.git
 ```
 
+---
 
-### Utilizzare un personal access token o una chiave ssh per accedere su git (profile settings > dev settings > create a personal access token)
+## Accessing GitHub
 
-### Per eseguire lo script assicurarsi di avere un ambiente con uv (uv sinc) e eseguirlo da visual code per esempio come jupyter notebook (sotto la cartella notebook c'è il file main.ipynb)
+If the repository is private, you must authenticate using either:
 
-### La lista delle dipendenze è nel file pyproject.toml
+- a **Personal Access Token**  
+  (GitHub → Profile → Settings → Developer Settings → Fine-grained Tokens)
+- **SSH keys** configured on your machine
 
+---
 
-```toml 
-dependencies = [ "ipykernel>=7.0.0", "ipywidgets>=8.1.7", "pandas>=2.3.3", "scikit-learn>=1.7.2", "tqdm>=4.67.1", ] 
-``` 
+## Running the Code
 
+This project uses **uv** for environment and dependency management.
 
-### Uno schema dei dati di addestramento è mostrato nel file utils/schema.py
+To set up the environment:
+
+```bash
+uv sync
+```
+
+How to run it:
+
+1. Open the root folder in **VS Code**
+2. Run `final_consegna.py`
+
+Alternatively you can run it on a terminal/bash window as `python final_consegna.py`
+
+---
+
+## Dependencies (from `pyproject.toml`)
+
+```toml
+dependencies = [
+    "autofeat>=2.1.3",
+    "ipykernel>=7.0.0",
+    "ipywidgets>=8.1.7",
+    "nbdime>=4.0.2",
+    "pandas>=2.3.3",
+    "pyarrow>=22.0.0",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
+    "xgboost>=3.1.1",
+]
+```
+
+---
+
+## Training Data Schema
+
+The structure of the training data is described in `utils/schema.py`.
+
+Below is a Mermaid ER diagram representing the full dataset:
 
 ```mermaid
 erDiagram
@@ -33,10 +78,10 @@ erDiagram
     BATTLETIMELINE {
         int turn
     }
+
     BATTLETIMELINE ||--|| POKEMONSTATE : "p1_pokemon_state"
     BATTLETIMELINE ||--o| MOVEDETAILS : "p1_move_details"
-    BATTLETIMELINE ||--|| POKEMONSTATE : "p2_pokemon_state"
-    BATTLETIMELINE ||--o| MOVEDETAILS : "p2_move_details"
+    BATTLETIMELINE }o--|{ MOVEDETAILS : "p2_move_details"
 
     POKEMONSTATE {
         string name
@@ -75,3 +120,5 @@ erDiagram
         int base_spe
     }
 ```
+
+---
