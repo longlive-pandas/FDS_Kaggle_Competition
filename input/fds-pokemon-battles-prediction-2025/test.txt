@@ -1,3 +1,0 @@
-52.75 =>(scaling) => 52.8 =>(added diff feat.) 52.8 => (added diff_spa e diff_spd) 52.75
-=>(corretto diff_spa e diff_spd inizializzate a 0 e non aggiornate) 53.15%
-=>(fix spa e spd 1,2) 52.8 => (effetti sui tipi) 53.4

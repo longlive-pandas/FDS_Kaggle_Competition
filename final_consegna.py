@@ -1600,6 +1600,7 @@ prefix = str(int(10000*accuracy_score(y, y_train_pred)))+"_"+str(int(10000*acc.m
 predict_and_submit(test_df, features, final_pipe, prefix="logistic")
 
 #VOTING:
+print("VOTING MODEL")
 model, features, importance_table = train_with_feature_selection(
     X, y, k=80
 )
@@ -1609,6 +1610,7 @@ features = correlation_pruning(X_reduced, threshold=0.92)
 print("\nModello finale pronto!")
 final(model, "voting")
 #STACKING
+print("STACKING MODEL")
 model = build_stacking_model()
 final(model, "stacking")
 
