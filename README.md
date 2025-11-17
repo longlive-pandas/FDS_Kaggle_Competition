@@ -65,23 +65,28 @@ The structure of the training data is described in `utils/schema.py`.
 
 Below is a Mermaid ER diagram representing the full dataset:
 
+
 ```mermaid
 erDiagram
+
     ROOT {
         bool player_won
         int battle_id
     }
+
     ROOT ||--o{ POKEMONDETAIL : "p1_team_details"
     ROOT ||--|| POKEMONDETAIL : "p2_lead_details"
+
     ROOT ||--o{ BATTLETIMELINE : "battle_timeline"
 
     BATTLETIMELINE {
         int turn
     }
-
-    BATTLETIMELINE ||--|| POKEMONSTATE : "p1_pokemon_state"
-    BATTLETIMELINE ||--o| MOVEDETAILS : "p1_move_details"
-    BATTLETIMELINE }o--|{ MOVEDETAILS : "p2_move_details"
+    
+    BATTLETIMELINE |o--|| POKEMONSTATE : "p1_pokemon_state, p2_pokemon_state"
+    
+    MOVEDETAILS }o--|| BATTLETIMELINE : "p1_move_details,
+    p2_move_details"
 
     POKEMONSTATE {
         string name
@@ -119,6 +124,7 @@ erDiagram
         int base_spd
         int base_spe
     }
+
 ```
 
 ---
